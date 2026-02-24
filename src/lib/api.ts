@@ -1,4 +1,8 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+// Ensure BASE_URL cleanly ends with /api, avoiding double slashes or missing /api.
+const cleanEnvUrl = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
+const BASE_URL = cleanEnvUrl.endsWith('/api') ? cleanEnvUrl : `${cleanEnvUrl}/api`;
+
 
 const getHeaders = (omitContentType = false) => {
   const headers: Record<string, string> = {};
