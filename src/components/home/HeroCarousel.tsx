@@ -22,15 +22,15 @@ const slides = [
   },
   {
     id: 3,
-    image: "src/components/home/Black White Bold Fashion Product Promotion Landscape Banner-2.png",
+    image: "/Black White Bold Fashion Product Promotion Landscape Banner-2.png",
     title: "Premium Collection",
     subtitle: "Elevate your style with our exclusive range",
     cta: "Explore",
     link: "/category/shirts",
   },
-   {
+  {
     id: 4,
-    image: "src/components/home/Embroidered Floral Patchwork Shorts-3.jpg",
+    image: "/Embroidered Floral Patchwork Shorts-3.jpg",
     title: "Premium Collection",
     subtitle: "Elevate your style with our exclusive range",
     cta: "Explore",
