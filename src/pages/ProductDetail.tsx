@@ -8,7 +8,7 @@ import { ProductImageGallery } from "@/components/products/ProductImageGallery";
 import { ProductInfo } from "@/components/products/ProductInfo";
 import { ProductReviews } from "@/components/products/ProductReviews";
 import { useProductById, useProductsByCategory } from "@/hooks/useProducts";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShoppingBag } from "lucide-react";
 
 const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -94,6 +94,7 @@ const ProductDetail = () => {
                 <ProductReviews
                   productId={product._id || product.id || ""}
                   isLoggedIn={!!localStorage.getItem("userInfo")}
+                  reviews={(product as any).reviews || []}
                 />
               </div>
             </div>
@@ -107,6 +108,28 @@ const ProductDetail = () => {
           </section>
         )}
       </main>
+
+      {/* Sticky Add to Cart bar on mobile */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-background/95 backdrop-blur-md border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-bold text-lg text-primary">
+              {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(product.price)}
+            </p>
+            {product.originalPrice && (
+              <p className="text-xs text-muted-foreground line-through">
+                {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(product.originalPrice)}
+              </p>
+            )}
+          </div>
+          <Button className="flex-1 max-w-xs h-11 font-semibold" onClick={() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}>
+            <ShoppingBag className="h-4 w-4 mr-2" />
+            Add to Cart
+          </Button>
+        </div>
+      </div>
 
       <Footer />
     </div>

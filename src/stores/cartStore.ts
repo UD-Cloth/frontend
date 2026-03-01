@@ -15,12 +15,14 @@ export interface CartItem {
 interface CartStore {
   items: CartItem[];
   isLoading: boolean;
+  isOpen: boolean;
   addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
   clearCart: () => void;
   fetchCart: () => Promise<void>;
   setItems: (items: CartItem[]) => void;
+  setIsOpen: (isOpen: boolean) => void;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -28,6 +30,9 @@ export const useCartStore = create<CartStore>()(
     (set, get) => ({
       items: [],
       isLoading: false,
+      isOpen: false,
+
+      setIsOpen: (isOpen) => set({ isOpen }),
 
       addItem: async (item) => {
         const { items } = get();

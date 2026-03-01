@@ -75,7 +75,7 @@ export const HeroCarousel = () => {
                 alt={slide.title}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-foreground/70 via-foreground/50 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent" />
               <div className="absolute inset-0 flex items-center">
                 <div className="container px-4">
                   <div className="max-w-xl text-background">

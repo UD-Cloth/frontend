@@ -94,14 +94,14 @@ const Checkout = () => {
     setUseSavedAddress(checked);
     if (checked) {
       const source = savedProfile?.address ? savedProfile : MOCK_USER_PROFILE;
-      form.setValue("firstName", source.firstName ?? "");
-      form.setValue("lastName", source.lastName ?? "");
-      form.setValue("email", source.email ?? user?.email ?? "");
-      form.setValue("address", source.address ?? "");
-      form.setValue("city", source.city ?? "");
-      form.setValue("state", source.state ?? "");
-      form.setValue("postalCode", source.postalCode ?? "");
-      form.setValue("phone", source.phone ?? "");
+      form.setValue("firstName", source.firstName ?? "", { shouldValidate: true });
+      form.setValue("lastName", source.lastName ?? "", { shouldValidate: true });
+      form.setValue("email", source.email ?? user?.email ?? "", { shouldValidate: true });
+      form.setValue("address", source.address ?? "", { shouldValidate: true });
+      form.setValue("city", source.city ?? "", { shouldValidate: true });
+      form.setValue("state", source.state ?? "", { shouldValidate: true });
+      form.setValue("postalCode", source.postalCode ?? "", { shouldValidate: true });
+      form.setValue("phone", source.phone ?? "", { shouldValidate: true });
     }
   };
 
@@ -127,6 +127,8 @@ const Checkout = () => {
       const payload = {
         orderItems,
         shippingAddress: {
+          firstName: data.firstName,
+          lastName: data.lastName,
           address: data.address,
           city: data.city,
           postalCode: data.postalCode,
@@ -190,6 +192,35 @@ const Checkout = () => {
           <div className="w-24"></div> {/* Spacer for centering */}
         </div>
       </header>
+
+      {/* Checkout Progress Indicator */}
+      <div className="border-b bg-secondary/30">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-center gap-0 max-w-lg mx-auto">
+            {[
+              { label: "Cart", icon: "🛒", done: true },
+              { label: "Shipping", icon: "📦", done: false, active: true },
+              { label: "Payment", icon: "💳", done: false },
+              { label: "Done", icon: "✅", done: false },
+            ].map((step, i, arr) => (
+              <div key={step.label} className="flex items-center flex-1 last:flex-initial">
+                <div className="flex flex-col items-center">
+                  <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step.done ? "bg-primary text-primary-foreground" : step.active ? "bg-primary text-primary-foreground ring-4 ring-primary/20" : "bg-muted text-muted-foreground"
+                    }`}>
+                    {step.done ? "✓" : step.icon}
+                  </div>
+                  <span className={`text-[10px] mt-1 font-medium ${step.done || step.active ? "text-primary" : "text-muted-foreground"}`}>
+                    {step.label}
+                  </span>
+                </div>
+                {i < arr.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-2 rounded ${step.done ? "bg-primary" : "bg-muted"}`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <main className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-12 gap-8 max-w-6xl mx-auto">
@@ -326,7 +357,7 @@ const Checkout = () => {
                       )}
                     />
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
                         name="city"

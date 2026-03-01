@@ -44,12 +44,9 @@ const Account = () => {
         const userInfo = JSON.parse(userInfoStr);
         setUser(userInfo);
 
-        const [profileRes, ordersRes] = await Promise.all([
-          api.get("/auth/profile"),
-          api.get("/orders/myorders")
-        ]);
+        const { data: dashboardData } = await api.get("/auth/dashboard");
 
-        const pData = (profileRes as any).data;
+        const pData = dashboardData.profile;
         setProfile({
           fullName: `${pData.firstName} ${pData.lastName}`,
           phone: pData.phone || "",
@@ -59,7 +56,7 @@ const Account = () => {
           postalCode: pData.postalCode || ""
         });
 
-        setOrders((ordersRes as any).data);
+        setOrders(dashboardData.orders);
       } catch (e) {
         console.error("Failed to fetch profile/orders", e);
       } finally {

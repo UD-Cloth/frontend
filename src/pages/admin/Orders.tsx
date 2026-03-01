@@ -10,11 +10,18 @@ interface OrderUser {
   _id?: string;
   firstName?: string;
   lastName?: string;
+  email?: string;
 }
 
 interface Order {
   _id: string;
-  user: OrderUser;
+  user?: OrderUser;
+  shippingAddress?: {
+    firstName?: string;
+    lastName?: string;
+    city?: string;
+    address?: string;
+  };
   orderItems: { name: string; qty: number; price: number }[];
   totalPrice: number;
   isPaid: boolean;
@@ -64,8 +71,17 @@ export default function Orders() {
 
   const customerName = (order: Order) => {
     const u = order.user;
-    if (!u) return "—";
-    return [u.firstName, u.lastName].filter(Boolean).join(" ") || "—";
+    if (u && (u.firstName || u.lastName)) {
+      return [u.firstName, u.lastName].filter(Boolean).join(" ");
+    }
+    const s = order.shippingAddress;
+    if (s && (s.firstName || s.lastName)) {
+      return [s.firstName, s.lastName].filter(Boolean).join(" ") + " (Guest)";
+    }
+    if (u && u.email) {
+      return u.email;
+    }
+    return "Unknown Customer";
   };
 
   const statusBadge = (order: Order) => {
@@ -104,7 +120,7 @@ export default function Orders() {
                   <TableCell>₹{order.totalPrice?.toLocaleString("en-IN") ?? "—"}</TableCell>
                   <TableCell>{statusBadge(order)}</TableCell>
                   <TableCell className="text-right">
-                    {!order.isDelivered && (
+                    {!order.isDelivered ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -121,6 +137,8 @@ export default function Orders() {
                           </>
                         )}
                       </Button>
+                    ) : (
+                      <span className="text-sm font-medium text-muted-foreground mr-2">Completed</span>
                     )}
                   </TableCell>
                 </TableRow>

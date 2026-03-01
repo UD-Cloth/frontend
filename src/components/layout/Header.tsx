@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, LogOut, User as UserIcon, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,47 +31,39 @@ export const Header = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isCartOpen, setIsCartOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const items = useCartStore((state) => state.items);
+  const location = useLocation();
+  const { items, isOpen: isCartOpen, setIsOpen: setIsCartOpen, fetchCart, clearCart } = useCartStore();
   const cartItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const { totalItems: wishlistItems } = useWishlist();
-  const { fetchCart, clearCart } = useCartStore();
   const [user, setUser] = useState<any>(null);
 
   const { data: categories = [] } = useCategories();
 
-  const { data: productsForSearch = [] } = useQuery({
-    queryKey: ["products", "all"],
-    queryFn: async () => {
-      const { data } = await api.get<SearchSuggestion[]>("/products");
-      return data;
-    },
-    enabled: isSearchOpen && searchQuery.length >= 2,
-    staleTime: 2 * 60 * 1000,
-  });
+  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  const suggestions = useMemo((): SearchSuggestion[] => {
-    if (!searchQuery.trim() || searchQuery.length < 2) return [];
-    const query = searchQuery.toLowerCase();
-    const catName = (p: { category?: { name?: string } | string }) =>
-      typeof p.category === "object" ? (p.category as { name?: string })?.name ?? "" : String(p.category ?? "");
-    return productsForSearch
-      .filter(
-        (p: { name?: string; category?: { name?: string } | string }) =>
-          (p.name ?? "").toLowerCase().includes(query) ||
-          catName(p).toLowerCase().includes(query)
-      )
-      .slice(0, 5)
-      .map((p: { _id?: string; id?: string; name?: string; price?: number; image?: string }) => ({
-        id: p._id ?? p.id ?? "",
-        name: p.name ?? "",
-        price: p.price ?? 0,
-        image: p.image ?? "",
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ["product-search", debouncedQuery],
+    queryFn: async () => {
+      if (debouncedQuery.length < 2) return [];
+      const { data } = await api.get<any[]>("/products/search", { params: { q: debouncedQuery, limit: 5 } });
+      return data.map((p) => ({
+        id: p._id || p.id || "",
+        name: p.name || "",
+        price: p.price || 0,
+        image: p.image || "",
         type: "local" as const,
       }));
-  }, [searchQuery, productsForSearch]);
+    },
+    enabled: isSearchOpen && debouncedQuery.length >= 2,
+    staleTime: 60 * 1000,
+  });
 
   useEffect(() => {
     // Check local storage for user profile session
@@ -94,6 +86,27 @@ export const Header = () => {
     navigate("/");
   };
 
+  // Auto-close cart and mobile menu on route change
+  useEffect(() => {
+    setIsCartOpen(false);
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  const renderSuggestionName = (name: string, query: string) => {
+    if (!query) return name;
+    const parts = name.split(new RegExp(`(${query})`, "gi"));
+    return (
+      <span className="truncate">
+        {parts.map((part, i) =>
+          part.toLowerCase() === query.toLowerCase() ? (
+            <strong key={i} className="font-bold text-primary">{part}</strong>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -161,7 +174,7 @@ export const Header = () => {
                   <DropdownMenuItem
                     key={category._id}
                     asChild
-                    className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent"
+                    className="transition-colors duration-150 p-3 lg:p-2 cursor-pointer hover:bg-accent hover:text-accent-foreground focus:bg-accent"
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <Link
@@ -196,7 +209,7 @@ export const Header = () => {
           {/* Mobile Menu */}
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
             <SheetTrigger asChild className="lg:hidden">
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" aria-label="Open menu">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -248,19 +261,33 @@ export const Header = () => {
             <div className="hidden md:flex items-center relative" ref={searchRef}>
               {isSearchOpen ? (
                 <div className="relative">
-                  <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in">
-                    <Input
-                      placeholder="Search products..."
-                      className="w-64 h-9"
-                      autoFocus
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setShowSuggestions(true);
-                      }}
-                      onKeyDown={handleKeyDown}
-                      onFocus={() => setShowSuggestions(true)}
-                    />
+                  <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in relative">
+                    <div className="relative flex items-center">
+                      <Input
+                        placeholder="Search products..."
+                        className="w-64 h-9 pr-8"
+                        autoFocus
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setShowSuggestions(true);
+                        }}
+                        onKeyDown={handleKeyDown}
+                        onFocus={() => setShowSuggestions(true)}
+                      />
+                      {searchQuery.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery("");
+                            searchRef.current?.querySelector('input')?.focus();
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
                     <Button type="submit" variant="ghost" size="icon">
                       <Search className="h-4 w-4" />
                     </Button>
@@ -301,7 +328,7 @@ export const Header = () => {
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm truncate">
-                                  {suggestion.name}
+                                  {renderSuggestionName(suggestion.name, debouncedQuery)}
                                 </p>
                                 <p className="text-sm text-primary font-semibold">
                                   {formatPrice(suggestion.price)}
@@ -329,6 +356,7 @@ export const Header = () => {
                   variant="ghost"
                   size="icon"
                   onClick={() => setIsSearchOpen(true)}
+                  aria-label="Open search"
                 >
                   <Search className="h-5 w-5" />
                 </Button>
@@ -338,7 +366,7 @@ export const Header = () => {
             {/* Mobile Search */}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
+                <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search">
                   <Search className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -359,7 +387,7 @@ export const Header = () => {
 
             {/* Wishlist */}
             <Link to="/wishlist">
-              <Button variant="ghost" size="icon" className="relative">
+              <Button variant="ghost" size="icon" className="relative" aria-label="Wishlist">
                 <Heart className="h-5 w-5" />
                 {wishlistItems > 0 && (
                   <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
@@ -375,6 +403,7 @@ export const Header = () => {
               size="icon"
               className="relative"
               onClick={() => setIsCartOpen(true)}
+              aria-label="Shopping cart"
             >
               <ShoppingBag className="h-5 w-5" />
               {cartItems > 0 && (
@@ -388,7 +417,7 @@ export const Header = () => {
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" aria-label="User account">
                     <User className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>

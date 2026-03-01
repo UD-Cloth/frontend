@@ -19,12 +19,30 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-const authSchema = z.object({
+const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-type AuthFormValues = z.infer<typeof authSchema>;
+const signUpSchema = z.object({
+  firstName: z.string().min(2, "First name is required"),
+  lastName: z.string().min(2, "Last name is required"),
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  confirmPassword: z.string()
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
+
+type SignInFormValues = z.infer<typeof signInSchema>;
+type SignUpFormValues = z.infer<typeof signUpSchema>;
+
+
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
@@ -32,19 +50,22 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const signInForm = useForm<AuthFormValues>({
-    resolver: zodResolver(authSchema),
+  const signInForm = useForm<SignInFormValues>({
+    resolver: zodResolver(signInSchema),
     defaultValues: {
       email: "",
       password: "",
     },
   });
 
-  const signUpForm = useForm<AuthFormValues>({
-    resolver: zodResolver(authSchema),
+  const signUpForm = useForm<SignUpFormValues>({
+    resolver: zodResolver(signUpSchema),
     defaultValues: {
+      firstName: "",
+      lastName: "",
       email: "",
       password: "",
+      confirmPassword: "",
     },
   });
 
@@ -64,7 +85,7 @@ export default function Auth() {
     }
   }, [navigate]);
 
-  const handleSignIn = async (values: AuthFormValues) => {
+  const handleSignIn = async (values: SignInFormValues) => {
     setIsLoading(true);
     try {
       const { data } = await api.post("/auth/login", {
@@ -92,12 +113,12 @@ export default function Auth() {
     }
   };
 
-  const handleSignUp = async (values: AuthFormValues) => {
+  const handleSignUp = async (values: SignUpFormValues) => {
     setIsLoading(true);
     try {
       const { data } = await api.post("/auth/register", {
-        firstName: "New",
-        lastName: "User",
+        firstName: values.firstName,
+        lastName: values.lastName,
         email: values.email,
         password: values.password,
       });
@@ -125,7 +146,7 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4">
+        <Link to="/" className="absolute top-6 left-6 inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
           Back to Home
         </Link>
@@ -207,6 +228,34 @@ export default function Auth() {
               <TabsContent value="signup">
                 <Form {...signUpForm}>
                   <form onSubmit={signUpForm.handleSubmit(handleSignUp)} className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={signUpForm.control}
+                        name="firstName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>First Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="John" disabled={isLoading} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={signUpForm.control}
+                        name="lastName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Last Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Doe" disabled={isLoading} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <FormField
                       control={signUpForm.control}
                       name="email"
@@ -247,6 +296,26 @@ export default function Auth() {
                                   <Eye className="h-4 w-4 text-muted-foreground" />
                                 )}
                               </Button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={signUpForm.control}
+                      name="confirmPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Confirm Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showPassword ? "text" : "password"}
+                                placeholder="••••••••"
+                                disabled={isLoading}
+                                {...field}
+                              />
                             </div>
                           </FormControl>
                           <FormMessage />

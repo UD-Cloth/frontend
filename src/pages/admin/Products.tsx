@@ -162,7 +162,8 @@ export default function Products() {
   };
 
   const openEdit = (p: Product) => {
-    const catId = typeof p.category === "object" ? p.category?._id : p.category;
+    // Handle case where category might be populated as an object vs just an ID string
+    const catId = typeof p.category === "object" ? (p.category as any)?._id : p.category;
     setForm({
       name: p.name,
       price: String(p.price),

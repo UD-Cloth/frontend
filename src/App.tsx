@@ -31,6 +31,7 @@ import AdminLayout from "./pages/admin/AdminLayout";
 import Dashboard from "./pages/admin/Dashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
+import { BackToTop } from "@/components/layout/BackToTop";
 
 
 const queryClient = new QueryClient();
@@ -80,7 +81,8 @@ const App = () => (
       <WishlistProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BackToTop />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AppContent />
         </BrowserRouter>
       </WishlistProvider>

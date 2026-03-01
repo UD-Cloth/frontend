@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ProductCard } from "@/components/products/ProductCard";
@@ -34,10 +34,16 @@ const SearchResults = () => {
         ) : totalResults === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <SearchX className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-xl font-semibold mb-2">No products found</h2>
-            <p className="text-muted-foreground max-w-md">
-              We couldn't find any products matching "{query}". Try searching with different keywords.
+            <h2 className="text-xl font-semibold mb-3">No products found</h2>
+            <p className="text-muted-foreground max-w-md mb-8">
+              We couldn't find any products matching "{query}". Try searching with different keywords or browse our popular categories below.
             </p>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <Link to="/category/men" className="text-sm border px-6 py-2.5 rounded-full hover:border-primary hover:bg-secondary/50 transition-colors">Men's Fit</Link>
+              <Link to="/category/women" className="text-sm border px-6 py-2.5 rounded-full hover:border-primary hover:bg-secondary/50 transition-colors">Women's Wear</Link>
+              <Link to="/sale" className="text-sm border px-6 py-2.5 rounded-full hover:border-primary hover:bg-secondary/50 text-red-600 transition-colors font-medium">Clearance Sale</Link>
+              <Link to="/new-arrivals" className="text-sm border px-6 py-2.5 rounded-full hover:border-primary hover:bg-secondary/50 transition-colors">New Arrivals</Link>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">

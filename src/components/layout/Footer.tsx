@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Facebook, Instagram, Twitter, Youtube, Mail, Loader2 } from "lucide-react";
+import { Facebook, Instagram, Twitter, Mail, Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -99,7 +99,7 @@ export const Footer = () => {
 
       {/* Main Footer */}
       <div className="container px-4 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
           {/* Shop */}
           <div>
             <h4 className="font-semibold mb-4">Shop</h4>

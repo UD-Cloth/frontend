@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { SlidersHorizontal, ChevronDown, X, Grid, List } from "lucide-react";
+import { SlidersHorizontal, X, Grid, List } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ProductCard } from "@/components/products/ProductCard";
 import { useCategories, useProductsByCategory, useProducts } from "@/hooks/useProducts";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
 
 const sizes = ["S", "M", "L", "XL", "XXL"];
 const colors = ["Black", "White", "Navy", "Grey", "Maroon"];
@@ -319,8 +318,22 @@ const CategoryPage = () => {
             {/* Product Grid */}
             <div className="flex-1">
               {isLoading ? (
-                <div className="py-12 flex justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin" />
+                <div className={cn(
+                  "grid gap-4",
+                  viewMode === "grid"
+                    ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                    : "grid-cols-1"
+                )}>
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="animate-pulse space-y-3">
+                      <div className="bg-muted rounded-lg aspect-[3/4]" />
+                      <div className="space-y-2 px-1">
+                        <div className="h-4 bg-muted rounded w-3/4" />
+                        <div className="h-3 bg-muted rounded w-1/2" />
+                        <div className="h-5 bg-muted rounded w-1/3" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-12">

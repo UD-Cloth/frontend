@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, ShoppingBag, Users, DollarSign, Loader2 } from "lucide-react";
 import api from "@/lib/api";
@@ -48,27 +49,30 @@ export default function Dashboard() {
       name: "Total Revenue",
       value: `₹${totalRevenue.toLocaleString("en-IN")}`,
       icon: DollarSign,
+      link: "/admin/orders",
     },
-    { name: "Total Orders", value: String(totalOrders), icon: ShoppingBag },
-    { name: "Total Products", value: String(totalProducts), icon: Package },
-    { name: "Total Customers", value: String(totalCustomers), icon: Users },
+    { name: "Total Orders", value: String(totalOrders), icon: ShoppingBag, link: "/admin/orders" },
+    { name: "Total Products", value: String(totalProducts), icon: Package, link: "/admin/products" },
+    { name: "Total Customers", value: String(totalCustomers), icon: Users, link: "/admin/users" },
   ];
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => (
-          <Card key={stat.name}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                {stat.name}
-              </CardTitle>
-              <stat.icon className="h-4 w-4 text-zinc-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold font-heading">{stat.value}</div>
-            </CardContent>
-          </Card>
+          <Link key={stat.name} to={stat.link} className="group">
+            <Card className="transition-all duration-200 group-hover:border-primary/50 group-hover:shadow-md cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                  {stat.name}
+                </CardTitle>
+                <stat.icon className="h-4 w-4 text-zinc-400 group-hover:text-primary transition-colors" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold font-heading">{stat.value}</div>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
       <div className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 h-96">

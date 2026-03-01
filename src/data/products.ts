@@ -19,4 +19,5 @@ export interface Product {
   isNew?: boolean;
   isNewItem?: boolean;
   isTrending?: boolean;
+  countInStock?: number;
 }
