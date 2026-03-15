@@ -1,527 +1,738 @@
 import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Link, useNavigate } from "react-router-dom";
-import { Loader2, ArrowLeft, CreditCard, Truck, CheckCircle2, MapPin, User } from "lucide-react";
-import { useCartStore } from "@/stores/cartStore";
+import * as z from "zod";
+import { Header } from "@/components/layout/Header";
+import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useToast } from "@/hooks/use-toast";
-import { MOCK_USER_PROFILE } from "@/data/mockProfile";
-import api from "@/lib/api";
+import { useCartStore } from "@/stores/cartStore";
+import { useAuthContext } from "@/context/AuthContext";
+import { useCreateOrder } from "@/hooks/useOrders";
+import { useToast } from "@/components/ui/use-toast";
+import { ShieldCheck, ArrowLeft, CheckCircle2, MapPin, User, Truck, CreditCard, Plus, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import "react-phone-number-input/style.css";
+import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 
-interface ProfileAddress {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  phone?: string;
-}
-
-const phoneRegex = /^[6-9]\d{9}$/;
-const pincodeRegex = /^[1-9][0-9]{5}$/;
-
-const shippingSchema = z.object({
-  firstName: z.string().min(2, "First name is required"),
-  lastName: z.string().min(2, "Last name is required"),
-  email: z.string().email("Invalid email address"),
-  address: z.string().min(10, "Address is too short (min 10 chars)"),
-  city: z.string().min(2, "City is required"),
-  state: z.string().min(2, "State is required"),
-  postalCode: z.string().regex(pincodeRegex, "Invalid Indian Pincode (6 digits)"),
-  phone: z.string().regex(phoneRegex, "Invalid Indian Phone Number (10 digits)"),
+const checkoutSchema = z.object({
+    firstName: z.string().min(1, "First name is required").max(50, "First name is too long"),
+    lastName: z.string().min(1, "Last name is required").max(50, "Last name is too long"),
+    email: z.string().email("Invalid email address"),
+    phone: z.string().refine((val) => isValidPhoneNumber(val), "Invalid phone number"),
+    address: z.string().min(5, "Address is too short"),
+    city: z.string().min(2, "City is required"),
+    state: z.string().min(2, "State is required"),
+    // Bug #102: Indian ZIP codes are exactly 6 digits
+    zipCode: z.string().regex(/^\d{6}$/, "PIN code must be exactly 6 digits"),
+    saveAddress: z.boolean().default(false),
+    paymentMethod: z.enum(['cod', 'online']),
 });
 
-type ShippingFormValues = z.infer<typeof shippingSchema>;
+type CheckoutValues = z.infer<typeof checkoutSchema>;
 
-const Checkout = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const { items, clearCart } = useCartStore();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("cod");
-  const [user, setUser] = useState<any>(null);
-  const [savedProfile, setSavedProfile] = useState<ProfileAddress | null>(null);
-  const [useSavedAddress, setUseSavedAddress] = useState(false);
+export default function Checkout() {
+    const navigate = useNavigate();
+    const { toast } = useToast();
+    const { items, clearCart } = useCartStore();
+    const createOrder = useCreateOrder();
+    const { user } = useAuthContext();
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+    const [emailSuggestions, setEmailSuggestions] = useState<string[]>([]);
+    // Bug #172: Promo/coupon codes at checkout
+    const [couponCode, setCouponCode] = useState("");
+    const [discountAmount, setDiscountAmount] = useState(0);
+    const [appliedCoupon, setAppliedCoupon] = useState("");
 
-  const form = useForm<ShippingFormValues>({
-    resolver: zodResolver(shippingSchema),
-    defaultValues: {
-      firstName: "",
-      lastName: "",
-      email: "",
-      address: "",
-      city: "",
-      state: "",
-      postalCode: "",
-      phone: "",
-    },
-  });
+    // Simple coupon validation (in production, this would be an API call)
+    const validateCoupon = (code: string) => {
+        const coupons: Record<string, number> = {
+            "SAVE10": 0.10,  // 10% off
+            "SAVE20": 0.20,  // 20% off
+            "WELCOME": 0.05, // 5% off
+        };
+        return coupons[code.toUpperCase()] || 0;
+    };
 
-  useEffect(() => {
-    const userInfoStr = localStorage.getItem("userInfo");
-    if (userInfoStr) {
-      try {
-        const userInfo = JSON.parse(userInfoStr);
-        setUser(userInfo);
-        if (userInfo.email) {
-          form.setValue("email", userInfo.email);
+    // Try to load saved address from localStorage
+    const loadSavedData = () => {
+        try {
+            const saved = localStorage.getItem('urban-drape-saved-checkout');
+            if (saved) return JSON.parse(saved);
+        } catch (e) {
+            console.error("Failed to load saved checkout data", e);
         }
-        api.get<ProfileAddress>("/auth/profile").then((res) => {
-          const p = (res as { data?: ProfileAddress }).data;
-          if (p) setSavedProfile(p);
-        }).catch(() => { });
-      } catch (e) { }
-    }
-  }, [form]);
+        return null;
+    };
 
-  const handleUseSavedAddress = (checked: boolean) => {
-    setUseSavedAddress(checked);
-    if (checked) {
-      const source = savedProfile?.address ? savedProfile : MOCK_USER_PROFILE;
-      form.setValue("firstName", source.firstName ?? "", { shouldValidate: true });
-      form.setValue("lastName", source.lastName ?? "", { shouldValidate: true });
-      form.setValue("email", source.email ?? user?.email ?? "", { shouldValidate: true });
-      form.setValue("address", source.address ?? "", { shouldValidate: true });
-      form.setValue("city", source.city ?? "", { shouldValidate: true });
-      form.setValue("state", source.state ?? "", { shouldValidate: true });
-      form.setValue("postalCode", source.postalCode ?? "", { shouldValidate: true });
-      form.setValue("phone", source.phone ?? "", { shouldValidate: true });
-    }
-  };
+    const savedData = loadSavedData();
 
-  const cartTotal = items.reduce(
-    (total, item) => total + parseFloat(item.price.amount) * item.quantity,
-    0
-  );
-
-  const onSubmit = async (data: ShippingFormValues) => {
-    setIsProcessing(true);
-
-    try {
-      const orderItems = items.map(item => ({
-        name: item.product?.name || 'Product',
-        qty: item.quantity,
-        image: item.product?.image || '',
-        price: parseFloat(item.price.amount),
-        product: item.product?._id || item.product?.id,
-        size: item.selectedOptions.find(o => o.name === 'Size')?.value,
-        color: item.selectedOptions.find(o => o.name === 'Color')?.value,
-      }));
-
-      const payload = {
-        orderItems,
-        shippingAddress: {
-          firstName: data.firstName,
-          lastName: data.lastName,
-          address: data.address,
-          city: data.city,
-          postalCode: data.postalCode,
-          state: data.state
+    const form = useForm<CheckoutValues>({
+        resolver: zodResolver(checkoutSchema),
+        defaultValues: {
+            firstName: savedData?.firstName || user?.firstName || "",
+            lastName: savedData?.lastName || user?.lastName || "",
+            email: savedData?.email || user?.email || "",
+            phone: savedData?.phone || user?.phone || "",
+            address: savedData?.address || "",
+            city: savedData?.city || "",
+            state: savedData?.state || "",
+            zipCode: savedData?.zipCode || "",
+            saveAddress: savedData?.saveAddress ?? true,
+            paymentMethod: 'cod',
         },
-        paymentMethod,
-        itemsPrice: cartTotal,
-        taxPrice: 0,
-        shippingPrice: 0,
-        totalPrice: cartTotal
-      };
+        mode: "onTouched",
+    });
 
-      const { data: createdOrder } = await api.post('/orders', payload);
+    const watchZip = form.watch("zipCode");
+    const watchEmail = form.watch("email");
 
-      toast({
-        title: "Order Placed Successfully!",
-        description: `Thank you for your order, ${data.firstName}. We'll send a confirmation email to ${data.email}.`,
-      });
+    // Smart Email Suggestion Logic
+    useEffect(() => {
+        if (!watchEmail || !watchEmail.includes('@')) {
+            setEmailSuggestions([]);
+            return;
+        }
 
-      clearCart();
-      if (user) {
-        navigate("/account");
-      } else {
-        navigate("/");
-      }
-    } catch (error: any) {
-      toast({
-        title: "Order failed",
-        description: error.message || "Failed to place order. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+        const [localPart, domainPart] = watchEmail.split('@');
+        const popularDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
 
-  if (items.length === 0 && !isProcessing) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <h1 className="text-2xl font-bold">Your cart is empty</h1>
-          <p className="text-muted-foreground">Add some items before checking out.</p>
-          <Button asChild>
-            <Link to="/">Return to Shop</Link>
-          </Button>
-        </div>
-      </div>
+        if (domainPart !== undefined) {
+            const matches = popularDomains.filter(d => d.startsWith(domainPart.toLowerCase()) && d !== domainPart.toLowerCase());
+            setEmailSuggestions(matches.map(d => `${localPart}@${d}`));
+        } else {
+            setEmailSuggestions([]);
+        }
+    }, [watchEmail]);
+
+    // Smart Address Autofill via Postal Code API
+    useEffect(() => {
+        if (watchZip && watchZip.length === 6) {
+            const fetchLocation = async () => {
+                setIsFetchingLocation(true);
+                try {
+                    const res = await fetch(`https://api.postalpincode.in/pincode/${watchZip}`);
+                    const data = await res.json();
+                    if (data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
+                        const postOffice = data[0].PostOffice[0];
+                        const city = postOffice.District || postOffice.Block || postOffice.Name;
+                        const state = postOffice.State;
+                        
+                        if (city) form.setValue('city', city, { shouldValidate: true });
+                        if (state) form.setValue('state', state, { shouldValidate: true });
+
+                        toast({
+                            title: "Location Auto-filled",
+                            description: `Found ${city}, ${state}`,
+                            duration: 2000,
+                        });
+                    }
+                } catch (error) {
+                    // Bug #141: Don't silently fail - just log, user can enter manually
+                    console.error("Postal code lookup failed", error);
+                    // No toast to avoid alarming user - they can manually fill fields
+                } finally {
+                    setIsFetchingLocation(false);
+                }
+            };
+            fetchLocation();
+        }
+    }, [watchZip, form, toast]);
+
+    const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalPrice = items.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
     );
-  }
+    const tax = totalPrice * 0.1;
+    // Bug #40: Threshold is ₹2000 — ProductInfo delivery text was showing ₹999 (fixed there)
+    const shipping = totalPrice > 2000 ? 0 : 150;
+    const subtotalBeforeDiscount = totalPrice + tax + shipping;
+    const grandTotal = subtotalBeforeDiscount - discountAmount;
 
-  return (
-    <div className="min-h-screen bg-background pb-12">
-      {/* Header */}
-      <header className="border-b sticky top-0 bg-background/80 backdrop-blur-md z-10">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Shop
-          </Link>
-          <Link to="/" className="text-xl font-bold">URBAN DRAPE</Link>
-          <div className="w-24"></div> {/* Spacer for centering */}
-        </div>
-      </header>
+    const applyCoupon = () => {
+        if (!couponCode.trim()) {
+            toast({
+                variant: "destructive",
+                title: "Invalid Coupon",
+                description: "Please enter a coupon code.",
+            });
+            return;
+        }
+        const discountPercent = validateCoupon(couponCode);
+        if (discountPercent === 0) {
+            toast({
+                variant: "destructive",
+                title: "Invalid Coupon",
+                description: "The coupon code you entered is not valid or has expired.",
+            });
+            setCouponCode("");
+            setDiscountAmount(0);
+            setAppliedCoupon("");
+            return;
+        }
+        const discount = subtotalBeforeDiscount * discountPercent;
+        setDiscountAmount(discount);
+        setAppliedCoupon(couponCode.toUpperCase());
+        setCouponCode("");
+        toast({
+            title: "Coupon Applied!",
+            description: `You saved ${formatPrice(discount)} with coupon ${couponCode.toUpperCase()}`,
+        });
+    };
 
-      {/* Checkout Progress Indicator */}
-      <div className="border-b bg-secondary/30">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-center gap-0 max-w-lg mx-auto">
-            {[
-              { label: "Cart", icon: "🛒", done: true },
-              { label: "Shipping", icon: "📦", done: false, active: true },
-              { label: "Payment", icon: "💳", done: false },
-              { label: "Done", icon: "✅", done: false },
-            ].map((step, i, arr) => (
-              <div key={step.label} className="flex items-center flex-1 last:flex-initial">
-                <div className="flex flex-col items-center">
-                  <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step.done ? "bg-primary text-primary-foreground" : step.active ? "bg-primary text-primary-foreground ring-4 ring-primary/20" : "bg-muted text-muted-foreground"
-                    }`}>
-                    {step.done ? "✓" : step.icon}
-                  </div>
-                  <span className={`text-[10px] mt-1 font-medium ${step.done || step.active ? "text-primary" : "text-muted-foreground"}`}>
-                    {step.label}
-                  </span>
-                </div>
-                {i < arr.length - 1 && (
-                  <div className={`flex-1 h-0.5 mx-2 rounded ${step.done ? "bg-primary" : "bg-muted"}`} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+    const formatPrice = (price: number) => {
+        return new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+            maximumFractionDigits: 0,
+        }).format(price);
+    };
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid lg:grid-cols-12 gap-8 max-w-6xl mx-auto">
+    const onSubmit = async (data: CheckoutValues) => {
+        setIsSubmitting(true);
 
-          {/* Left Column: Form */}
-          <div className="lg:col-span-7 space-y-8">
+        try {
+            // Bug #38: Validate cart is not empty before proceeding
+            if (items.length === 0) {
+                toast({
+                    variant: "destructive",
+                    title: "Cart is Empty",
+                    description: "Please add items to your cart before checking out.",
+                });
+                setIsSubmitting(false);
+                return;
+            }
 
-            {/* Authenticated User Options */}
-            {user && (
-              <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-6 flex items-start gap-4">
-                  <MapPin className="h-5 w-5 text-primary mt-1" />
-                  <div className="space-y-2 flex-1">
-                    <h3 className="font-medium text-foreground">Saved Address</h3>
-                    {savedProfile?.address ? (
-                      <p className="text-sm text-muted-foreground">
-                        {savedProfile.firstName} {savedProfile.lastName}<br />
-                        {savedProfile.address}, {savedProfile.city}, {savedProfile.state} - {savedProfile.postalCode}<br />
-                        {savedProfile.phone}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No saved address in your profile. Update your account to save one, or enter below.
-                      </p>
-                    )}
-                    <div className="flex items-center space-x-2 pt-2">
-                      <input
-                        type="checkbox"
-                        id="useSaved"
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        checked={useSavedAddress}
-                        onChange={(e) => handleUseSavedAddress(e.target.checked)}
-                      />
-                      <label htmlFor="useSaved" className="text-sm font-medium cursor-pointer">
-                        Use this address for shipping
-                      </label>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            const orderItems = items.map((item) => ({
+                name: item.name,
+                qty: item.quantity,
+                image: item.image,
+                price: item.price,
+                product: item.productId,
+                size: item.size || 'Standard',
+                color: item.color || 'Standard',
+            }));
 
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+            await createOrder.mutateAsync({
+                orderItems,
+                // Bug #43: Include customer email and phone for order fulfillment
+                customerEmail: data.email,
+                customerPhone: data.phone,
+                shippingAddress: {
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    address: data.address,
+                    city: data.city,
+                    postalCode: data.zipCode,
+                    state: data.state,
+                },
+                paymentMethod: data.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment',
+                itemsPrice: totalPrice,
+                taxPrice: tax,
+                shippingPrice: shipping,
+                totalPrice: grandTotal,
+            });
 
-                {/* Contact & Shipping */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <User className="h-5 w-5" />
-                      Contact Information
-                    </CardTitle>
-                    <CardDescription>How can we reach you about your order?</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="firstName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>First Name</FormLabel>
-                            <FormControl>
-                              <Input placeholder="John" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="lastName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Last Name</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Doe" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input placeholder="john@example.com" type="email" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl>
-                            <Input placeholder="9999999999" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                </Card>
+            // Save details if requested
+            if (data.saveAddress) {
+                localStorage.setItem('urban-drape-saved-checkout', JSON.stringify({
+                    firstName: data.firstName,
+                    lastName: data.lastName,
+                    email: data.email,
+                    phone: data.phone,
+                    address: data.address,
+                    city: data.city,
+                    state: data.state,
+                    zipCode: data.zipCode,
+                    saveAddress: true
+                }));
+            } else {
+                localStorage.removeItem('urban-drape-saved-checkout');
+            }
 
-                {/* Shipping Details */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <MapPin className="h-5 w-5" />
-                      Shipping Address
-                    </CardTitle>
-                    <CardDescription>Where should we deliver your order?</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="address"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Address</FormLabel>
-                          <FormControl>
-                            <Input placeholder="House/Flat No, Street Name" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+            toast({
+                title: "Order Placed Successfully! 🎉",
+                description: "Your order has been confirmed and is being processed.",
+            });
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Mumbai" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Maharashtra" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="postalCode"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Postal Code</FormLabel>
-                            <FormControl>
-                              <Input placeholder="400001" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
+            clearCart();
+            setIsSubmitting(false);
+            navigate("/account");
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: "Order Failed",
+                description: "There was an issue processing your order. Please try again.",
+            });
+            setIsSubmitting(false);
+        }
+    };
 
-                {/* Payment Method */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <CreditCard className="h-5 w-5" />
-                      Payment Method
-                    </CardTitle>
-                    <CardDescription>Select how you'd like to pay.</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <RadioGroup defaultValue="cod" onValueChange={setPaymentMethod} className="grid grid-cols-1 gap-4">
-                      <div>
-                        <RadioGroupItem value="cod" id="cod" className="peer sr-only" />
-                        <label
-                          htmlFor="cod"
-                          className="flex items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Truck className="h-4 w-4" />
-                            <span className="font-semibold">Cash on Delivery</span>
-                          </div>
-                        </label>
-                      </div>
-
-                      {/* You can add more mock payment methods here */}
-                      <div>
-                        <RadioGroupItem value="online" id="online" className="peer sr-only" disabled />
-                        <label
-                          htmlFor="online"
-                          className="flex items-center justify-between rounded-md border-2 border-muted bg-popover p-4 opacity-50 cursor-not-allowed"
-                        >
-                          <div className="flex items-center gap-2">
-                            <CreditCard className="h-4 w-4" />
-                            <span className="font-semibold">Online Payment (Coming Soon)</span>
-                          </div>
-                        </label>
-                      </div>
-                    </RadioGroup>
-                  </CardContent>
-                </Card>
-
-                <Button type="submit" size="lg" className="w-full" disabled={isProcessing}>
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing Order...
-                    </>
-                  ) : (
-                    `Place Order - ₹${cartTotal.toLocaleString()}`
-                  )}
-                </Button>
-              </form>
-            </Form>
-          </div>
-
-          {/* Right Column: Order Summary */}
-          <div className="lg:col-span-5">
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle>Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4 max-h-[400px] overflow-auto pr-2">
-                  {items.map((item) => (
-                    <div key={item.variantId} className="flex gap-4">
-                      <div className="h-16 w-16 rounded overflow-hidden bg-muted flex-shrink-0">
-                        <img
-                          src={item.product?.image || ""}
-                          alt={item.product?.name}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 text-sm">
-                        <p className="font-medium line-clamp-2">{item.product?.name}</p>
-                        <p className="text-muted-foreground text-xs mt-1">
-                          Size: {item.selectedOptions.find(o => o.name === "Size")?.value}
+    if (items.length === 0) {
+        return (
+            <div className="min-h-screen flex flex-col">
+                <Header />
+                <main className="flex-1 flex flex-col items-center justify-center p-4">
+                    <div className="text-center max-w-md">
+                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <Truck className="w-10 h-10 text-slate-300" />
+                        </div>
+                        <h1 className="text-2xl font-bold mb-4">Your Cart is Empty</h1>
+                        <p className="text-muted-foreground mb-8">
+                            Looks like you haven't added anything to your cart yet. Discover our latest collections to get started!
                         </p>
-                        <p className="text-muted-foreground text-xs">Qty: {item.quantity}</p>
-                      </div>
-                      <p className="font-medium text-sm">
-                        ₹{(parseFloat(item.price.amount) * item.quantity).toLocaleString()}
-                      </p>
+                        <Button asChild className="w-full h-12 text-md">
+                            <Link to="/">Continue Shopping</Link>
+                        </Button>
                     </div>
-                  ))}
+                </main>
+                <Footer />
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen flex flex-col bg-[#F9FAFB]">
+            <Header />
+
+            <main className="flex-1 container max-w-7xl px-4 py-8 md:py-12 mx-auto">
+
+                {/* Progress Indicator */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-10 w-full">
+                    <Button variant="ghost" className="pl-0 text-muted-foreground hover:text-foreground mb-6 md:mb-0" asChild>
+                        <Link to="/">
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Back to Shopping
+                        </Link>
+                    </Button>
+
+                    <div className="flex items-center justify-center w-full md:w-auto">
+                        {['Cart', 'Shipping', 'Payment', 'Done'].map((step, index, array) => (
+                            <div key={step} className="flex items-center">
+                                <div className="flex flex-col items-center justify-center relative">
+                                    <div className={cn(
+                                        "flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm z-10 transition-colors",
+                                        index < 2 ? "bg-black text-white" : (index === 2 ? "bg-red-600 text-white shadow-md shadow-red-200" : "bg-slate-200 text-slate-500")
+                                    )}>
+                                        {index < 2 ? <CheckCircle2 className="w-5 h-5" /> : index + 1}
+                                    </div>
+                                    <span className={cn(
+                                        "absolute top-10 text-xs font-medium whitespace-nowrap",
+                                        index <= 2 ? "text-foreground" : "text-slate-400"
+                                    )}>
+                                        {step}
+                                    </span>
+                                </div>
+                                {index < array.length - 1 && (
+                                    <div className={cn(
+                                        "w-12 sm:w-20 lg:w-32 h-[2px] mx-2 -translate-y-3",
+                                        index < 2 ? "bg-black" : "bg-slate-200"
+                                    )} />
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="hidden md:block w-32"></div>
                 </div>
 
-                <Separator />
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start mt-12">
 
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>₹{cartTotal.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Shipping</span>
-                    <span className="text-green-600 font-medium">Free</span>
-                  </div>
-                </div>
+                        {/* Left Column - Form Sections */}
+                        <div className="lg:col-span-7 xl:col-span-8 space-y-8">
 
-                <Separator />
+                            {/* 1. Saved Address Section */}
+                            <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center">
+                                    <MapPin className="w-5 h-5 mr-3 text-red-600" />
+                                    Delivery Options
+                                </h2>
 
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span>₹{cartTotal.toLocaleString()}</span>
-                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {savedData && (
+                                        <div className="border-2 border-red-600 bg-red-50/20 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all">
+                                            <div className="absolute top-0 right-0 p-1.5 bg-red-600 text-white rounded-bl-lg">
+                                                <CheckCircle2 className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="bg-slate-100 text-xs font-medium px-2 py-0.5 rounded text-slate-600">Saved</span>
+                                                <p className="font-semibold text-sm">{savedData.firstName} {savedData.lastName}</p>
+                                            </div>
+                                            <p className="text-sm text-slate-600 leading-relaxed truncate">{savedData.address}<br />{savedData.city}, {savedData.state}<br />{savedData.zipCode}</p>
+                                        </div>
+                                    )}
 
-                <div className="bg-primary/5 p-4 rounded-lg flex gap-3 text-sm text-primary">
-                  <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
-                  <p>
-                    All transactions are secure and encrypted.
-                  </p>
-                </div>
+                                    <div className="border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors rounded-xl p-5 cursor-pointer flex flex-col items-center justify-center text-slate-500 min-h-[120px]">
+                                        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-400">
+                                            <Plus className="w-5 h-5" />
+                                        </div>
+                                        <p className="text-sm font-medium">Add New Address</p>
+                                    </div>
+                                </div>
+                            </div>
 
-              </CardContent>
-            </Card>
-          </div>
+                            {/* 2. Contact Information */}
+                            <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center">
+                                    <User className="w-5 h-5 mr-3 text-red-600" />
+                                    Contact Information
+                                </h2>
 
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+                                    <FormField control={form.control} name="firstName" render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel className="text-slate-700">First Name</FormLabel>
+                                            <FormControl>
+                                                <Input className="h-11 bg-slate-50/50" placeholder="John" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
+                                    <FormField control={form.control} name="lastName" render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel className="text-slate-700">Last Name</FormLabel>
+                                            <FormControl>
+                                                <Input className="h-11 bg-slate-50/50" placeholder="Doe" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
+                                    <FormField control={form.control} name="email" render={({ field }) => (
+                                        <FormItem className="relative">
+                                            <FormLabel className="text-slate-700">Email Address</FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="email"
+                                                    className="h-11 bg-slate-50/50"
+                                                    placeholder="john@example.com"
+                                                    {...field}
+                                                    autoComplete="email"
+                                                />
+                                            </FormControl>
+                                            {emailSuggestions.length > 0 && (
+                                                <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-md shadow-lg mt-1 overflow-hidden">
+                                                    {emailSuggestions.map(suggestion => (
+                                                        <div
+                                                            key={suggestion}
+                                                            className="px-3 py-2 text-sm cursor-pointer hover:bg-slate-100"
+                                                            onClick={() => {
+                                                                form.setValue('email', suggestion, { shouldValidate: true });
+                                                                setEmailSuggestions([]);
+                                                            }}
+                                                        >
+                                                            {suggestion}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
+                                    <FormField control={form.control} name="phone" render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel className="text-slate-700">Phone Number</FormLabel>
+                                            <FormControl>
+                                                <div className="flex bg-slate-50/50 rounded-md border border-input ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 overflow-hidden h-11">
+                                                    <PhoneInput
+                                                        international
+                                                        defaultCountry="IN"
+                                                        value={field.value}
+                                                        onChange={field.onChange}
+                                                        className="w-full h-full px-3 py-2 text-sm [&>input]:bg-slate-50/50 [&>input]:border-none [&>input]:h-full [&>input]:focus-visible:ring-0 [&>input]:focus-visible:outline-none"
+                                                    />
+                                                </div>
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
+                                </div>
+                            </div>
+
+                            {/* 3. Shipping Address */}
+                            <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center">
+                                    <Truck className="w-5 h-5 mr-3 text-red-600" />
+                                    Shipping Address
+                                </h2>
+
+                                <div className="space-y-5">
+                                    <FormField control={form.control} name="address" render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel className="text-slate-700">Address Line</FormLabel>
+                                            <FormControl>
+                                                <Input className="h-11 bg-slate-50/50" placeholder="Flat No, Building Name, Street" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )} />
+
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5">
+                                        <FormField control={form.control} name="city" render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-slate-700">City</FormLabel>
+                                                <FormControl>
+                                                    <Input className="h-11 bg-slate-50/50" placeholder="Mumbai" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                        <FormField control={form.control} name="state" render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-slate-700">State</FormLabel>
+                                                <FormControl>
+                                                    <Input className="h-11 bg-slate-50/50" placeholder="Maharashtra" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                        <FormField control={form.control} name="zipCode" render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel className="text-slate-700 flex justify-between items-center">
+                                                    <span>Postal Code</span>
+                                                    {isFetchingLocation && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                                                </FormLabel>
+                                                <FormControl>
+                                                    {/* Bug #280: Prevent non-numeric input in postal code */}
+                                                <Input className="h-11 bg-slate-50/50" placeholder="400001" {...field} maxLength={6} inputMode="numeric" onKeyPress={(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                    </div>
+
+                                    <div className="pt-4 flex items-center space-x-2">
+                                        <FormField control={form.control} name="saveAddress" render={({ field }) => (
+                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                                <FormControl>
+                                                    <div className="flex items-center space-x-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-600"
+                                                            checked={field.value}
+                                                            onChange={field.onChange}
+                                                        />
+                                                        <FormLabel className="text-sm font-medium text-slate-700 cursor-pointer">
+                                                            Save this address for next time
+                                                        </FormLabel>
+                                                    </div>
+                                                </FormControl>
+                                            </FormItem>
+                                        )} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Payment Method */}
+                            <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center">
+                                    <CreditCard className="w-5 h-5 mr-3 text-red-600" />
+                                    Payment Method
+                                </h2>
+
+                                <FormField control={form.control} name="paymentMethod" render={({ field }) => (
+                                    <FormItem className="space-y-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div
+                                                className={cn(
+                                                    "border-2 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all",
+                                                    field.value === 'cod' ? "border-red-600 bg-red-50/20" : "border-slate-200 bg-white hover:bg-slate-50"
+                                                )}
+                                                onClick={() => field.onChange('cod')}
+                                            >
+                                                {field.value === 'cod' && (
+                                                    <div className="absolute top-0 right-0 p-1.5 bg-red-600 text-white rounded-bl-lg">
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className={cn(
+                                                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                                        field.value === 'cod' ? "border-red-600" : "border-slate-300"
+                                                    )}>
+                                                        {field.value === 'cod' && <div className="w-2 h-2 rounded-full bg-red-600" />}
+                                                    </div>
+                                                    <p className="font-semibold text-sm">Cash on Delivery</p>
+                                                </div>
+                                                <p className="text-sm text-slate-500 ml-7">Pay in cash when order arrives.</p>
+                                            </div>
+
+                                            <div
+                                                className={cn(
+                                                    "border-2 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all",
+                                                    field.value === 'online' ? "border-red-600 bg-red-50/20" : "border-slate-200 bg-white hover:bg-slate-50"
+                                                )}
+                                                onClick={() => field.onChange('online')}
+                                            >
+                                                {field.value === 'online' && (
+                                                    <div className="absolute top-0 right-0 p-1.5 bg-red-600 text-white rounded-bl-lg">
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className={cn(
+                                                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                                        field.value === 'online' ? "border-red-600" : "border-slate-300"
+                                                    )}>
+                                                        {field.value === 'online' && <div className="w-2 h-2 rounded-full bg-red-600" />}
+                                                    </div>
+                                                    <p className="font-semibold text-sm">Online Payment</p>
+                                                </div>
+                                                <p className="text-sm text-slate-500 ml-7">UPI, Credit/Debit Cards, Netbanking.</p>
+                                            </div>
+                                        </div>
+                                    </FormItem>
+                                )} />
+                            </div>
+
+                        </div>
+
+                        {/* Right Column - Order Summary (Sticky) */}
+                        <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 space-y-6">
+                            <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/20">
+                                <h2 className="text-xl font-semibold mb-6">Order Summary</h2>
+
+                                <div className="space-y-4 mb-6 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {items.map((item) => (
+                                        <div key={`${item.productId}-${item.size}-${item.color}`} className="flex gap-4 group">
+                                            <div className="w-16 h-20 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-100">
+                                                {item.image ? (
+                                                    <img
+                                                        src={item.image}
+                                                        alt={item.name}
+                                                        className="w-full h-full object-cover mix-blend-multiply transition-transform group-hover:scale-105"
+                                                    />
+                                                ) : null}
+                                            </div>
+                                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                <h4 className="font-medium text-sm line-clamp-2 text-slate-800 leading-tight">{item.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5">
+                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded">{item.size || 'Standard'}</span>
+                                                    <span>•</span>
+                                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded">{item.color || 'Standard'}</span>
+                                                </p>
+                                            </div>
+                                            <div className="text-right flex flex-col justify-center">
+                                                <span className="font-semibold text-sm text-slate-900">
+                                                    {formatPrice(item.price * item.quantity)}
+                                                </span>
+                                                <span className="text-xs text-slate-500 mt-1 mt-auto">Qty: {item.quantity}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <Separator className="my-5 bg-slate-100" />
+
+                                {/* Bug #172: Promo/coupon codes */}
+                                <div className="mb-5 space-y-2">
+                                    <label className="text-sm font-medium text-slate-700">Promo Code</label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="Enter coupon code"
+                                            value={couponCode}
+                                            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                                            disabled={!!appliedCoupon}
+                                            className="text-sm"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={applyCoupon}
+                                            disabled={!!appliedCoupon || !couponCode}
+                                        >
+                                            Apply
+                                        </Button>
+                                    </div>
+                                    {appliedCoupon && (
+                                        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded p-2">
+                                            <span className="text-sm font-medium text-emerald-700">{appliedCoupon} Applied</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setAppliedCoupon("");
+                                                    setDiscountAmount(0);
+                                                }}
+                                                className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-3.5 text-sm">
+                                    <div className="flex justify-between items-center text-slate-600">
+                                        <span>Subtotal ({totalItems} items)</span>
+                                        <span className="font-medium text-slate-900">{formatPrice(totalPrice)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-600">
+                                        <span>Shipping</span>
+                                        {shipping === 0 ? (
+                                            <span className="font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Free</span>
+                                        ) : (
+                                            <span className="font-medium text-slate-900">{formatPrice(shipping)}</span>
+                                        )}
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-600">
+                                        <span>Estimated Tax</span>
+                                        <span className="font-medium text-slate-900">{formatPrice(tax)}</span>
+                                    </div>
+                                    {discountAmount > 0 && (
+                                        <div className="flex justify-between items-center text-emerald-600 bg-emerald-50 px-3 py-2 rounded">
+                                            <span className="font-medium">Discount</span>
+                                            <span className="font-bold">-{formatPrice(discountAmount)}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <Separator className="my-5 bg-slate-100" />
+
+                                <div className="flex justify-between items-end mb-8">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm text-slate-500 mb-1">Grand Total</span>
+                                        <span className="text-[10px] text-slate-400">Inclusive of all taxes</span>
+                                    </div>
+                                    <span className="font-bold text-2xl tracking-tight text-slate-900">{formatPrice(grandTotal)}</span>
+                                </div>
+
+                                <Button
+                                    type="submit"
+                                    className="w-full h-14 text-base font-semibold bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20 transition-all active:scale-[0.98]"
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting ? "Processing Securely..." : `Place Order — ${formatPrice(grandTotal)}`}
+                                </Button>
+
+                                <div className="mt-5 space-y-3">
+                                    <p className="text-xs text-center text-slate-500 flex items-center justify-center">
+                                        <ShieldCheck className="w-4 h-4 mr-1.5 text-emerald-600" />
+                                        100% Secure & Encrypted Payments
+                                    </p>
+                                    <p className="text-[10px] text-center text-slate-400 max-w-xs mx-auto leading-relaxed">
+                                        By placing your order, you agree to our company Privacy Policy and Conditions of Use.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </Form>
+            </main>
+
+            <Footer />
         </div>
-      </main>
-    </div>
-  );
-};
-
-export default Checkout;
+    );
+}

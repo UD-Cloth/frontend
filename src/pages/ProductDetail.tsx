@@ -1,24 +1,23 @@
-import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useEffect } from "react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { ProductCarousel } from "@/components/home/ProductCarousel";
 import { ProductImageGallery } from "@/components/products/ProductImageGallery";
 import { ProductInfo } from "@/components/products/ProductInfo";
-import { ProductReviews } from "@/components/products/ProductReviews";
 import { useProductById, useProductsByCategory } from "@/hooks/useProducts";
-import { Loader2, ShoppingBag } from "lucide-react";
+import { ProductReviews } from "@/components/products/ProductReviews";
+import { Loader2, Home } from "lucide-react";
 
 const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const { data: product, isLoading } = useProductById(id);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const { data: product, isLoading: isProductLoading } = useProductById(id);
+  const { data: relatedProductsData = [], isLoading: isRelatedLoading } = useProductsByCategory(
+    typeof product?.category === "string" ? product.category : product?.category?._id
+  );
 
-  const categoryName = product ? (typeof product.category === "object" ? (product.category as { name?: string })?.name : product.category) : undefined;
-  const { data: categoryProducts = [] } = useProductsByCategory(categoryName ?? undefined);
-
-  if (isLoading) {
+  if (isProductLoading || isRelatedLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
@@ -47,9 +46,17 @@ const ProductDetail = () => {
     );
   }
 
-  const relatedProducts = categoryProducts.filter(
+  const categoryName = typeof product.category === 'string' ? product.category : product.category?.name;
+
+  // Bug #124: Dynamic page title
+  useEffect(() => {
+    document.title = `${product.name} — URBAN DRAPE`;
+    return () => { document.title = 'URBAN DRAPE - Premium Men\'s Fashion'; };
+  }, [product.name]);
+  
+  const relatedProducts = relatedProductsData.filter(
     (p) => (p._id || p.id) !== (product._id || product.id)
-  ).slice(0, 12);
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -60,9 +67,9 @@ const ProductDetail = () => {
         <div className="w-full bg-secondary/40">
           <div className="container px-4 md:px-8 py-3">
             <nav className="text-xs md:text-sm text-muted-foreground font-medium">
-              <Link to="/" className="hover:text-primary transition-colors">Home</Link>
+              <Link to="/" className="hover:text-primary transition-colors flex items-center gap-1"><Home className="h-3 w-3" />Home</Link>
               <span className="mx-2 text-border">/</span>
-              <Link to={`/category/${encodeURIComponent(categoryName ?? "")}`} className="hover:text-primary transition-colors capitalize">
+              <Link to={`/category/${categoryName}`} className="hover:text-primary transition-colors">
                 {categoryName}
               </Link>
               <span className="mx-2 text-border">/</span>
@@ -78,28 +85,20 @@ const ProductDetail = () => {
               {/* Image Gallery */}
               <div className="lg:sticky lg:top-24 lg:self-start">
                 <ProductImageGallery
-                  images={product.images}
+                  images={product.images && product.images.length > 0 ? product.images : [product.image]}
                   name={product.name}
-                  isNew={product.isNew ?? (product as { isNewItem?: boolean }).isNewItem}
-                  activeImageIndex={activeImageIndex}
+                  isNew={product.isNewItem || product.isNew}
                 />
               </div>
 
-              {/* Product Info + Reviews */}
-              <div className="space-y-8">
-                <ProductInfo
-                  product={product}
-                  onColorChange={(idx) => setActiveImageIndex(idx)}
-                />
-                <ProductReviews
-                  productId={product._id || product.id || ""}
-                  isLoggedIn={!!localStorage.getItem("userInfo")}
-                  reviews={(product as any).reviews || []}
-                />
-              </div>
+              {/* Product Info */}
+              <ProductInfo product={product} />
             </div>
           </div>
         </section>
+
+        {/* Bug #70/#71: Product Reviews section */}
+        <ProductReviews productId={product._id || product.id || ""} />
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (
@@ -108,28 +107,6 @@ const ProductDetail = () => {
           </section>
         )}
       </main>
-
-      {/* Sticky Add to Cart bar on mobile */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-background/95 backdrop-blur-md border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-bold text-lg text-primary">
-              {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(product.price)}
-            </p>
-            {product.originalPrice && (
-              <p className="text-xs text-muted-foreground line-through">
-                {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(product.originalPrice)}
-              </p>
-            )}
-          </div>
-          <Button className="flex-1 max-w-xs h-11 font-semibold" onClick={() => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}>
-            <ShoppingBag className="h-4 w-4 mr-2" />
-            Add to Cart
-          </Button>
-        </div>
-      </div>
 
       <Footer />
     </div>

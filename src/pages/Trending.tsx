@@ -7,6 +7,14 @@ import { Loader2 } from "lucide-react";
 const Trending = () => {
   const { data: trendingProducts = [], isLoading } = useTrendingProducts();
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -20,11 +28,7 @@ const Trending = () => {
             </p>
           </div>
 
-          {isLoading ? (
-            <div className="py-12 flex justify-center">
-              <Loader2 className="w-8 h-8 animate-spin" />
-            </div>
-          ) : trendingProducts.length === 0 ? (
+          {trendingProducts.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground text-lg">
                 No trending products available yet.
@@ -33,7 +37,7 @@ const Trending = () => {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
               {trendingProducts.map((product) => (
-                <ProductCard key={product._id || product.id} product={product} />
+                <ProductCard key={product.id} product={product} />
               ))}
             </div>
           )}

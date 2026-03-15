@@ -5,12 +5,13 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { useWishlist } from "@/context/WishlistContext";
+// Bug #34: Use cartStore so Move-to-Cart is visible in checkout
 import { useCartStore } from "@/stores/cartStore";
 import { toast } from "sonner";
 
 const Wishlist = () => {
   const { items, removeFromWishlist } = useWishlist();
-  const { addItem, isLoading } = useCartStore();
+  const { addItem } = useCartStore();
   const [movingProductId, setMovingProductId] = useState<string | null>(null);
 
   const formatPrice = (price: number) => {
@@ -21,31 +22,35 @@ const Wishlist = () => {
     }).format(price);
   };
 
-  const handleMoveToCart = async (productId: string) => {
-    const product = items.find((p) => (p._id || p.id) === productId);
-    if (product) {
-      setMovingProductId(productId);
-      const selectedSize = product.sizes?.[0] || 'Default';
-      const selectedColor = product.colors?.[0]?.name || "";
-      const variantId = `local-variant-${product._id || product.id}-${selectedSize}-${selectedColor || 'default'}`;
-      const variantTitle = `${selectedSize}${selectedColor ? ` / ${selectedColor}` : ''}`;
+  const handleMoveToCart = async (product: any) => {
+    try {
+      setMovingProductId(product._id || product.id);
 
-      await addItem({
-        product: product,
-        variantId,
-        variantTitle,
-        price: { amount: product.price.toString(), currencyCode: "INR" },
+      const selectedSize = product.sizes?.[0] || "M";
+      const selectedColor = product.colors?.[0] || "";
+
+      addItem({
+        productId: product._id || product.id,
+        name: product.name,
+        image: product.images?.[0] || product.image || '',
+        price: product.price,
         quantity: 1,
-        selectedOptions: [
-          { name: "Size", value: selectedSize },
-          ...(selectedColor ? [{ name: "Color", value: selectedColor }] : [])
-        ]
+        size: selectedSize,
+        color: typeof selectedColor === 'object' ? (selectedColor as any)?.name || '' : selectedColor,
       });
 
-      removeFromWishlist(productId);
-      setMovingProductId(null);
+      removeFromWishlist(product._id || product.id);
       toast.success("Moved to cart!", { description: product.name });
+    } catch (error) {
+      toast.error("Failed to add to cart");
+    } finally {
+      setMovingProductId(null);
     }
+  };
+
+  const handleRemoveFromWishlist = (productId: string, productName: string) => {
+    removeFromWishlist(productId);
+    toast.success("Removed from wishlist", { description: productName });
   };
 
   return (
@@ -76,7 +81,7 @@ const Wishlist = () => {
                   <Link to={`/product/${product._id || product.id}`}>
                     <div className="aspect-[3/4] rounded-lg overflow-hidden bg-muted">
                       <img
-                        src={product.image}
+                        src={product.images?.[0] || product.image || 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&h=500&fit=crop'}
                         alt={product.name}
                         className="w-full h-full object-cover transition-transform group-hover:scale-105"
                       />
@@ -86,10 +91,11 @@ const Wishlist = () => {
                         {product.name}
                       </h3>
                       <div className="flex items-center gap-2 mt-1">
+                        {/* Bug #44: Show actual sale price (product.price) as primary */}
                         <span className="font-semibold text-primary">
                           {formatPrice(product.price)}
                         </span>
-                        {product.originalPrice && (
+                        {product.originalPrice && product.originalPrice > product.price && (
                           <span className="text-sm text-muted-foreground line-through">
                             {formatPrice(product.originalPrice)}
                           </span>
@@ -103,10 +109,10 @@ const Wishlist = () => {
                     <Button
                       size="sm"
                       className="flex-1"
-                      onClick={(e) => { e.preventDefault(); handleMoveToCart(product._id || product.id); }}
-                      disabled={isLoading && movingProductId === (product._id || product.id)}
+                      onClick={() => handleMoveToCart(product)}
+                      disabled={movingProductId === (product._id || product.id)}
                     >
-                      {isLoading && movingProductId === (product._id || product.id) ? (
+                      {movingProductId === (product._id || product.id) ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
@@ -118,7 +124,9 @@ const Wishlist = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={(e) => { e.preventDefault(); removeFromWishlist(product._id || product.id); }}
+                      onClick={() =>
+                        handleRemoveFromWishlist(product._id || product.id, product.name)
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

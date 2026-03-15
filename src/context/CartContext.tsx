@@ -10,7 +10,7 @@ export interface CartItem {
 
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: Product, size: string, color: string, quantity?: number) => void;
+  addToCart: (item: CartItem) => void;
   removeFromCart: (productId: string, size: string, color: string) => void;
   updateQuantity: (productId: string, size: string, color: string, quantity: number) => void;
   clearCart: () => void;
@@ -26,19 +26,19 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  const addToCart = (product: Product, size: string, color: string, quantity = 1) => {
+  const addToCart = (item: CartItem) => {
     setItems((prevItems) => {
       const existingIndex = prevItems.findIndex(
-        (item) => item.product.id === product.id && item.size === size && item.color === color
+        (cartItem) => cartItem.product._id === item.product._id && cartItem.size === item.size && cartItem.color === item.color
       );
 
       if (existingIndex >= 0) {
         const newItems = [...prevItems];
-        newItems[existingIndex].quantity += quantity;
+        newItems[existingIndex].quantity += item.quantity;
         return newItems;
       }
 
-      return [...prevItems, { product, quantity, size, color }];
+      return [...prevItems, item];
     });
     setIsCartOpen(true);
   };
@@ -46,7 +46,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const removeFromCart = (productId: string, size: string, color: string) => {
     setItems((prevItems) =>
       prevItems.filter(
-        (item) => !(item.product.id === productId && item.size === size && item.color === color)
+        (item) => !(item.product._id === productId && item.size === size && item.color === color)
       )
     );
   };
@@ -59,7 +59,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     setItems((prevItems) =>
       prevItems.map((item) =>
-        item.product.id === productId && item.size === size && item.color === color
+        item.product._id === productId && item.size === size && item.color === color
           ? { ...item, quantity }
           : item
       )

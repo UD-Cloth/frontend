@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -10,18 +10,11 @@ interface ProductImageGalleryProps {
   images: string[];
   name: string;
   isNew?: boolean;
-  activeImageIndex?: number;
 }
 
-export const ProductImageGallery = ({ images, name, isNew, activeImageIndex }: ProductImageGalleryProps) => {
+export const ProductImageGallery = ({ images, name, isNew }: ProductImageGalleryProps) => {
   const [selectedImage, setSelectedImage] = useState(0);
   const [isZoomOpen, setIsZoomOpen] = useState(false);
-
-  useEffect(() => {
-    if (activeImageIndex !== undefined && activeImageIndex >= 0 && activeImageIndex < images.length) {
-      setSelectedImage(activeImageIndex);
-    }
-  }, [activeImageIndex, images.length]);
 
   return (
     <div className="space-y-3">

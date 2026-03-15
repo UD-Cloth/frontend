@@ -11,18 +11,23 @@
     <title>URBAN DRAPE - Premium Men's Fashion</title>
     <meta name="description" content="Shop premium men's fashion - T-shirts, shirts, hoodies, jackets, jeans and accessories." />
     <meta name="author" content="URBAN DRAPE" />
+    <!-- Bug #128: Canonical URL -->
+    <link rel="canonical" href="https://www.urbandrape.in/" />
 
     <meta property="og:title" content="URBAN DRAPE - Premium Men's Fashion" />
     <meta property="og:description" content="Shop premium men's fashion - T-shirts, shirts, hoodies, jackets, jeans and accessories." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta property="og:url" content="https://www.urbandrape.in" />
+    <meta property="og:image" content="/1-04.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@MENSWEAR" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta name="twitter:site" content="@UrbanDrape" />
+    <meta name="twitter:image" content="/1-04.png" />
   </head>
 
   <body>
+    <!-- Bug #116: Skip to main content link for keyboard accessibility -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-white focus:text-black focus:font-medium focus:rounded focus:shadow-lg">Skip to main content</a>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

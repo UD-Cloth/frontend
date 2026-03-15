@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 import { Product } from '../data/products';
 
@@ -28,8 +28,9 @@ export const useProducts = (params?: {
   return useQuery({
     queryKey: ['products', params],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params });
-      return data;
+      const { data } = await api.get<any>('/products', { params });
+      // Bug #76: Return the nested data array from the paginated response
+      return Array.isArray(data) ? data : data.data || [];
     },
   });
 };
@@ -38,8 +39,8 @@ export const useTrendingProducts = () => {
   return useQuery({
     queryKey: ['products', { isTrending: true }],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params: { isTrending: true } });
-      return data;
+      const { data } = await api.get<any>('/products', { params: { isTrending: true } });
+      return Array.isArray(data) ? data : data.data || [];
     },
   });
 };
@@ -48,8 +49,8 @@ export const useNewArrivals = () => {
   return useQuery({
     queryKey: ['products', { isNew: true }],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params: { isNew: true } });
-      return data;
+      const { data } = await api.get<any>('/products', { params: { isNew: true } });
+      return Array.isArray(data) ? data : data.data || [];
     },
   });
 };
@@ -58,8 +59,8 @@ export const useSaleProducts = () => {
   return useQuery({
     queryKey: ['products', { isSale: true }],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params: { isSale: true } });
-      return data;
+      const { data } = await api.get<any>('/products', { params: { isSale: true } });
+      return Array.isArray(data) ? data : data.data || [];
     },
   });
 };
@@ -68,8 +69,8 @@ export const useProductsByCategory = (category?: string) => {
   return useQuery({
     queryKey: ['products', { category }],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params: { category } });
-      return data;
+      const { data } = await api.get<any>('/products', { params: { category } });
+      return Array.isArray(data) ? data : data.data || [];
     },
     enabled: !!category,
   });
@@ -89,12 +90,14 @@ export const useProductById = (id?: string) => {
 export const useSearchProducts = (q: string) => {
   const trimmed = q.trim();
   return useQuery({
-    queryKey: ['products', { q: trimmed }],
+    // Bug #190: Use dedicated /products/search endpoint for fast, relevant suggestions
+    queryKey: ['products-search', trimmed],
     queryFn: async () => {
-      const { data } = await api.get<Product[]>('/products', { params: { q: trimmed } });
+      const { data } = await api.get<Product[]>('/products/search', { params: { q: trimmed, limit: 5 } });
       return data;
     },
-    enabled: trimmed.length > 0,
+    enabled: trimmed.length >= 2,
+    staleTime: 30 * 1000,
   });
 };
 
@@ -114,5 +117,60 @@ export const useProductReviews = (productId?: string) => {
       return data;
     },
     enabled: !!productId,
+  });
+};
+
+export const useAddProduct = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (productData: Partial<Product>) => {
+      const { data } = await api.post<Product>('/products', productData);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+};
+
+export const useUpdateProduct = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Product> }) => {
+      const { data: responseData } = await api.put<Product>(`/products/${id}`, data);
+      return responseData;
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product', id] });
+    },
+  });
+};
+
+export const useDeleteProduct = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.delete(`/products/${id}`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+};
+
+// Bug #71: Hook to submit a product review
+export const useAddReview = (productId?: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (review: { rating: number; comment: string }) => {
+      const { data } = await api.post(`/products/${productId}/reviews`, review);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reviews', productId] });
+      queryClient.invalidateQueries({ queryKey: ['product', productId] });
+    },
   });
 };

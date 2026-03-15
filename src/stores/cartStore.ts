@@ -3,184 +3,234 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import api from '@/lib/api';
 
 export interface CartItem {
-  lineId: string;
-  product: any; // Using generic product type for backend
-  variantId: string;
-  variantTitle: string;
-  price: { amount: string; currencyCode: string };
+  productId: string;
+  name: string;
+  image: string;
+  price: number;
   quantity: number;
-  selectedOptions: Array<{ name: string; value: string }>;
+  size: string;
+  color: string;
 }
 
 interface CartStore {
   items: CartItem[];
   isLoading: boolean;
-  isOpen: boolean;
-  addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
-  updateQuantity: (variantId: string, quantity: number) => Promise<void>;
-  removeItem: (variantId: string) => Promise<void>;
+  syncError: string | null;
+  addItem: (item: CartItem) => void;
+  updateQuantity: (productId: string, size: string, color: string, quantity: number) => void;
+  removeItem: (productId: string, size: string, color: string) => void;
   clearCart: () => void;
-  fetchCart: () => Promise<void>;
-  setItems: (items: CartItem[]) => void;
-  setIsOpen: (isOpen: boolean) => void;
+  syncCartToBackend: () => Promise<void>;
+  loadCartFromBackend: () => Promise<void>;
+  onSyncError?: (error: string) => void;
 }
+
+/** Generate a unique key for a cart item (product + size + color combo) */
+function itemKey(item: { productId: string; size: string; color: string }) {
+  return `${item.productId}__${item.size}__${item.color}`;
+}
+
+function getAuthToken(): string | null {
+  try {
+    const userInfo = localStorage.getItem('userInfo');
+    if (userInfo) {
+      const parsed = JSON.parse(userInfo);
+      return parsed.token || null;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+let syncErrorCallback: ((error: string) => void) | undefined;
 
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
       items: [],
       isLoading: false,
-      isOpen: false,
+      syncError: null,
 
-      setIsOpen: (isOpen) => set({ isOpen }),
-
-      addItem: async (item) => {
+      addItem: (item) => {
         const { items } = get();
-        const existingItem = items.find(i => i.variantId === item.variantId);
-        const userInfo = localStorage.getItem('userInfo');
+        const key = itemKey(item);
+        const existingIndex = items.findIndex(i => itemKey(i) === key);
 
-        set({ isLoading: true });
-        try {
-          if (userInfo) {
-            const res: any = await api.post('/cart', {
-              productId: item.product._id || item.product.id,
-              variantId: item.variantId,
-              variantTitle: item.variantTitle,
-              price: item.price,
-              quantity: item.quantity,
-              selectedOptions: item.selectedOptions
-            });
-            // Map backend cart to frontend items
-            const backendItems = res.data.items.map((i: any) => ({
-              lineId: `db-${i.variantId}`,
-              product: i.productId,
-              variantId: i.variantId,
-              variantTitle: i.variantTitle,
-              price: i.price,
-              quantity: i.quantity,
-              selectedOptions: i.selectedOptions
-            }));
-            set({ items: backendItems });
-          } else {
-            if (existingItem) {
-              const newQuantity = existingItem.quantity + item.quantity;
-              set({ items: items.map(i => i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i) });
-            } else {
-              set({ items: [...items, { ...item, lineId: `local-${Date.now()}` }] });
-            }
-          }
-        } catch (error) {
-          console.error('Failed to add item:', error);
-        } finally {
-          set({ isLoading: false });
+        let newItems: CartItem[];
+        if (existingIndex > -1) {
+          newItems = items.map((i, idx) =>
+            idx === existingIndex ? { ...i, quantity: i.quantity + item.quantity } : i
+          );
+        } else {
+          newItems = [...items, item];
+        }
+
+        set({ items: newItems });
+
+        // Fire-and-forget backend sync for logged-in users
+        const token = getAuthToken();
+        if (token) {
+          const variantId = `${item.productId}-${item.size}-${item.color}`;
+          api.post('/cart', {
+            productId: item.productId,
+            variantId,
+            variantTitle: `${item.size}${item.color ? ` / ${item.color}` : ''}`,
+            price: { amount: item.price.toString(), currencyCode: 'INR' },
+            quantity: item.quantity,
+            selectedOptions: [
+              { name: 'Size', value: item.size },
+              ...(item.color ? [{ name: 'Color', value: item.color }] : []),
+            ],
+          }).catch(err => console.error('Cart sync failed:', err));
         }
       },
 
-      updateQuantity: async (variantId, quantity) => {
+      updateQuantity: (productId, size, color, quantity) => {
         if (quantity <= 0) {
-          await get().removeItem(variantId);
+          get().removeItem(productId, size, color);
           return;
         }
 
         const { items } = get();
-        const userInfo = localStorage.getItem('userInfo');
+        const key = itemKey({ productId, size, color });
+        set({ items: items.map(i => itemKey(i) === key ? { ...i, quantity } : i) });
 
-        set({ isLoading: true });
-        try {
-          if (userInfo) {
-            const res: any = await api.put(`/cart/${variantId}`, { quantity });
-            const backendItems = res.data.items.map((i: any) => ({
-              lineId: `db-${i.variantId}`,
-              product: i.productId,
-              variantId: i.variantId,
-              variantTitle: i.variantTitle,
-              price: i.price,
-              quantity: i.quantity,
-              selectedOptions: i.selectedOptions
-            }));
-            set({ items: backendItems });
-          } else {
-            set({ items: items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
-          }
-        } catch (error) {
-          console.error('Failed to update quantity:', error);
-        } finally {
-          set({ isLoading: false });
+        const token = getAuthToken();
+        if (token) {
+          const variantId = `${productId}-${size}-${color}`;
+          api.put(`/cart/${encodeURIComponent(variantId)}`, { quantity })
+            .catch(err => console.error('Cart update sync failed:', err));
         }
       },
 
-      removeItem: async (variantId) => {
+      removeItem: (productId, size, color) => {
         const { items } = get();
-        const userInfo = localStorage.getItem('userInfo');
+        const key = itemKey({ productId, size, color });
+        set({ items: items.filter(i => itemKey(i) !== key) });
 
-        set({ isLoading: true });
-        try {
-          if (userInfo) {
-            const res: any = await api.delete(`/cart/${variantId}`);
-            const backendItems = res.data.items.map((i: any) => ({
-              lineId: `db-${i.variantId}`,
-              product: i.productId,
-              variantId: i.variantId,
-              variantTitle: i.variantTitle,
-              price: i.price,
-              quantity: i.quantity,
-              selectedOptions: i.selectedOptions
-            }));
-            set({ items: backendItems });
-          } else {
-            const newItems = items.filter(i => i.variantId !== variantId);
-            set({ items: newItems });
-          }
-        } catch (error) {
-          console.error('Failed to remove item:', error);
-        } finally {
-          set({ isLoading: false });
+        const token = getAuthToken();
+        if (token) {
+          const variantId = `${productId}-${size}-${color}`;
+          api.delete(`/cart/${encodeURIComponent(variantId)}`)
+            .catch(err => console.error('Cart remove sync failed:', err));
         }
       },
 
-      clearCart: async () => {
-        const userInfo = localStorage.getItem('userInfo');
-        if (userInfo) {
-          try {
-            await api.delete('/cart');
-          } catch (error) {
-            console.error('Failed to clear cart:', error);
-          }
-        }
+      clearCart: () => {
         set({ items: [] });
+
+        const token = getAuthToken();
+        if (token) {
+          api.delete('/cart').catch(err => console.error('Cart clear sync failed:', err));
+        }
       },
 
-      fetchCart: async () => {
-        const userInfo = localStorage.getItem('userInfo');
-        if (!userInfo) return;
+      /** Load server cart on login */
+      loadCartFromBackend: async () => {
+        const token = getAuthToken();
+        if (!token) return;
 
         set({ isLoading: true });
         try {
-          const res: any = await api.get('/cart');
-          const backendItems = res.data.items.map((i: any) => ({
-            lineId: `db-${i.variantId}`,
-            product: i.productId,
-            variantId: i.variantId,
-            variantTitle: i.variantTitle,
-            price: i.price,
-            quantity: i.quantity,
-            selectedOptions: i.selectedOptions
-          }));
-          set({ items: backendItems });
-        } catch (error) {
-          console.error('Failed to fetch cart:', error);
+          const { data } = await api.get('/cart');
+          if (data && data.items && Array.isArray(data.items)) {
+            const serverItems: CartItem[] = data.items.map((item: any) => {
+              const product = item.productId; // populated
+              return {
+                productId: typeof product === 'string' ? product : (product?._id || product?.id || ''),
+                name: typeof product === 'object' ? product.name : '',
+                image: typeof product === 'object' ? (product.image || (product.images?.[0] ?? '')) : '',
+                price: Number.parseFloat(item.price?.amount ?? '0'),
+                quantity: item.quantity,
+                size: item.selectedOptions?.find((o: any) => o.name === 'Size')?.value || '',
+                color: item.selectedOptions?.find((o: any) => o.name === 'Color')?.value || '',
+              };
+            });
+
+            // Bug #55: Handle quantity conflicts - merge local and server items, prefer larger quantity
+            const localItems = get().items;
+            const mergedItems: CartItem[] = [];
+            const processedKeys = new Set<string>();
+
+            // Process all server items first
+            for (const serverItem of serverItems) {
+              const key = itemKey(serverItem);
+              const localItem = localItems.find(i => itemKey(i) === key);
+
+              // Use the larger quantity between local and server
+              const quantity = localItem ? Math.max(localItem.quantity, serverItem.quantity) : serverItem.quantity;
+              mergedItems.push({ ...serverItem, quantity });
+              processedKeys.add(key);
+            }
+
+            // Add any local-only items
+            for (const localItem of localItems) {
+              const key = itemKey(localItem);
+              if (!processedKeys.has(key)) {
+                mergedItems.push(localItem);
+              }
+            }
+
+            set({ items: mergedItems, syncError: null });
+          }
+        } catch (err) {
+          // Bug #56: Show error when cart sync fails
+          const errorMsg = 'Failed to sync cart from server';
+          console.error(errorMsg, err);
+          set({ syncError: errorMsg });
+          if (syncErrorCallback) {
+            syncErrorCallback(errorMsg);
+          }
         } finally {
           set({ isLoading: false });
         }
       },
 
-      setItems: (items) => set({ items }),
+      /** Push entire local cart to the backend */
+      syncCartToBackend: async () => {
+        const token = getAuthToken();
+        if (!token) return;
+
+        const { items } = get();
+        let hasFailed = false;
+        for (const item of items) {
+          const variantId = `${item.productId}-${item.size}-${item.color}`;
+          try {
+            await api.post('/cart', {
+              productId: item.productId,
+              variantId,
+              variantTitle: `${item.size}${item.color ? ` / ${item.color}` : ''}`,
+              price: { amount: item.price.toString(), currencyCode: 'INR' },
+              quantity: item.quantity,
+              selectedOptions: [
+                { name: 'Size', value: item.size },
+                ...(item.color ? [{ name: 'Color', value: item.color }] : []),
+              ],
+            });
+          } catch (err) {
+            // Bug #56: Track sync failures
+            console.error('Failed to sync cart item:', err);
+            hasFailed = true;
+          }
+        }
+
+        if (hasFailed) {
+          const errorMsg = 'Failed to sync some items to cart';
+          set({ syncError: errorMsg });
+          if (syncErrorCallback) {
+            syncErrorCallback(errorMsg);
+          }
+        }
+      },
     }),
     {
-      name: 'ud-cart',
+      name: 'urban-drape-cart',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ items: state.items }),
     }
   )
 );
 
+// Helper to set error callback from components
+export function setCartSyncErrorCallback(callback: (error: string) => void) {
+  syncErrorCallback = callback;
+}

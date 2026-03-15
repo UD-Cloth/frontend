@@ -62,7 +62,7 @@ export const ProductCarousel = ({ title, products, viewAllLink }: ProductCarouse
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
           {products.map((product) => (
-            <div key={product._id || product.id} className="min-w-[160px] sm:min-w-[180px] md:min-w-[240px] snap-start">
+            <div key={product.id} className="min-w-[160px] sm:min-w-[180px] md:min-w-[240px] snap-start">
               <ProductCard product={product} />
             </div>
           ))}

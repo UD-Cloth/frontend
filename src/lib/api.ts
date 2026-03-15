@@ -24,7 +24,20 @@ const getHeaders = (omitContentType = false) => {
 const handleResponse = async (response: Response) => {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.message || 'Something went wrong');
+    // Bug #29/#30: Auto-logout on 401 (expired/invalid JWT) to prevent broken UI state
+    if (response.status === 401) {
+      localStorage.removeItem('userInfo');
+      localStorage.removeItem('urban-drape-cart');
+      localStorage.removeItem('wishlist');
+      // Redirect to auth only if not already there and not on admin pages
+      if (!window.location.pathname.startsWith('/auth') && !window.location.pathname.startsWith('/admin')) {
+        window.location.href = '/auth?returnUrl=' + encodeURIComponent(window.location.pathname);
+      }
+    }
+    // Bug #181, #182: Throw error with response structure compatible with axios error handling
+    const error: any = new Error(data.message || 'Something went wrong');
+    error.response = { data, status: response.status };
+    throw error;
   }
   return { data };
 };
@@ -53,11 +66,11 @@ const api = {
     });
     return handleResponse(response) as Promise<{ data: T }>;
   },
-  put: async <T>(url: string, body: any) => {
+  put: async <T>(url: string, body?: any) => {
     const response = await fetch(`${BASE_URL}${url}`, {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify(body),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     return handleResponse(response) as Promise<{ data: T }>;
   },

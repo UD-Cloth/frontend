@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, LogOut, User as UserIcon, Settings } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -14,16 +13,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWishlist } from "@/context/WishlistContext";
 import { CartDrawer } from "@/components/cart/CartDrawer";
+// Bug #36: Use cartStore (single source of truth) for cart badge count
 import { useCartStore } from "@/stores/cartStore";
-import { useCategories } from "@/hooks/useProducts";
-import api from "@/lib/api";
+import { useCategories, useSearchProducts } from "@/hooks/useProducts";
+import { useAuthContext } from "@/context/AuthContext";
 
 interface SearchSuggestion {
   id: string;
   name: string;
   price: number;
   image: string;
-  type: "local" | "shopify";
 }
 
 export const Header = () => {
@@ -31,82 +30,27 @@ export const Header = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const location = useLocation();
-  const { items, isOpen: isCartOpen, setIsOpen: setIsCartOpen, fetchCart, clearCart } = useCartStore();
-  const cartItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  // Bug #36: cartStore is the canonical source for cart count
+  const { items: cartStoreItems } = useCartStore();
+  const cartItems = cartStoreItems.reduce((sum, item) => sum + item.quantity, 0);
   const { totalItems: wishlistItems } = useWishlist();
-  const [user, setUser] = useState<any>(null);
-
   const { data: categories = [] } = useCategories();
+  const { user, logout } = useAuthContext();
 
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  // Bug #190: Use dedicated search API for suggestions instead of filtering all products client-side
+  const { data: searchResults = [], isLoading: isLoadingProducts } = useSearchProducts(
+    searchQuery.length >= 2 ? searchQuery : ""
+  );
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const { data: suggestions = [] } = useQuery({
-    queryKey: ["product-search", debouncedQuery],
-    queryFn: async () => {
-      if (debouncedQuery.length < 2) return [];
-      const { data } = await api.get<any[]>("/products/search", { params: { q: debouncedQuery, limit: 5 } });
-      return data.map((p) => ({
-        id: p._id || p.id || "",
-        name: p.name || "",
-        price: p.price || 0,
-        image: p.image || "",
-        type: "local" as const,
-      }));
-    },
-    enabled: isSearchOpen && debouncedQuery.length >= 2,
-    staleTime: 60 * 1000,
-  });
-
-  useEffect(() => {
-    // Check local storage for user profile session
-    const userInfoStr = localStorage.getItem("userInfo");
-    if (userInfoStr) {
-      try {
-        const userInfo = JSON.parse(userInfoStr);
-        setUser(userInfo);
-        fetchCart();
-      } catch (e) {
-        console.error("Failed to parse user session", e);
-      }
-    }
-  }, []);
-
-  const handleSignOut = () => {
-    localStorage.removeItem("userInfo");
-    clearCart();
-    setUser(null);
-    navigate("/");
-  };
-
-  // Auto-close cart and mobile menu on route change
-  useEffect(() => {
-    setIsCartOpen(false);
-    setIsMobileMenuOpen(false);
-  }, [location.pathname]);
-
-  const renderSuggestionName = (name: string, query: string) => {
-    if (!query) return name;
-    const parts = name.split(new RegExp(`(${query})`, "gi"));
-    return (
-      <span className="truncate">
-        {parts.map((part, i) =>
-          part.toLowerCase() === query.toLowerCase() ? (
-            <strong key={i} className="font-bold text-primary">{part}</strong>
-          ) : (
-            <span key={i}>{part}</span>
-          )
-        )}
-      </span>
-    );
-  };
+  const suggestions: SearchSuggestion[] = searchResults.map((p: any) => ({
+    id: p._id || p.id || "",
+    name: p.name,
+    price: p.price,
+    image: p.image || (p.images && p.images.length > 0 ? p.images[0] : ""),
+  }));
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -119,8 +63,8 @@ export const Header = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
       setIsSearchOpen(false);
@@ -172,16 +116,16 @@ export const Header = () => {
               >
                 {categories.map((category, index) => (
                   <DropdownMenuItem
-                    key={category._id}
+                    key={(category as any)._id}
                     asChild
-                    className="transition-colors duration-150 p-3 lg:p-2 cursor-pointer hover:bg-accent hover:text-accent-foreground focus:bg-accent"
+                    className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent"
                     style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <Link
-                      to={`/category/${encodeURIComponent(category.name)}`}
+                      to={`/category/${(category as any).name}`}
                       className="w-full cursor-pointer animate-fade-in"
                     >
-                      {category.name}
+                      {(category as any).name}
                     </Link>
                   </DropdownMenuItem>
                 ))}
@@ -192,6 +136,15 @@ export const Header = () => {
                 >
                   <Link to="/new-arrivals" className="w-full cursor-pointer text-primary font-medium">
                     New Arrivals
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  asChild
+                  className="transition-colors duration-150 hover:bg-primary/10"
+                >
+                  {/* Bug #112: Trending is now in the desktop menu */}
+                  <Link to="/trending" className="w-full cursor-pointer text-primary font-medium">
+                    Trending
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
@@ -213,35 +166,47 @@ export const Header = () => {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[300px]">
-              <nav className="flex flex-col gap-4 mt-8">
+            <SheetContent side="left" className="w-[300px] overflow-y-auto">
+              {/* Bug #296: Logo link at top of mobile menu */}
+              <Link to="/" className="flex items-center mb-2 mt-1" onClick={() => setIsMobileMenuOpen(false)}>
+                <img src="/Tag logo-01.png" alt="Urban Drape" className="h-16 w-auto" />
+              </Link>
+              <nav className="flex flex-col gap-4 mt-2">
                 <Link
                   to="/"
-                  className="text-lg font-medium hover:text-primary transition-colors"
+                  className="text-lg font-medium hover:text-primary transition-colors uppercase tracking-wide"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Home
                 </Link>
                 {categories.map((category) => (
                   <Link
-                    key={category._id}
-                    to={`/category/${encodeURIComponent(category.name)}`}
-                    className="text-lg font-medium hover:text-primary transition-colors"
+                    key={(category as any)._id}
+                    to={`/category/${(category as any).name}`}
+                    className="text-lg font-medium hover:text-primary transition-colors uppercase tracking-wide"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    {category.name}
+                    {(category as any).name}
                   </Link>
                 ))}
                 <Link
                   to="/new-arrivals"
-                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors"
+                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   New Arrivals
                 </Link>
+                {/* Bug #112: Trending was missing from mobile menu */}
+                <Link
+                  to="/trending"
+                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  Trending
+                </Link>
                 <Link
                   to="/sale"
-                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors"
+                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   Sale
@@ -251,8 +216,8 @@ export const Header = () => {
           </Sheet>
 
           {/* Logo */}
-          <Link to="/" className="flex items-center justify-center">
-            <img src="/Tag logo-01.png" alt="Logo" className="h-24 w-auto" />
+          <Link to="/" className="flex items-center justify-center mx-auto">
+            <img src="/Tag logo-01.png" alt="Urban Drape" className="h-24 w-auto" />
           </Link>
 
           {/* Right Icons */}
@@ -261,40 +226,27 @@ export const Header = () => {
             <div className="hidden md:flex items-center relative" ref={searchRef}>
               {isSearchOpen ? (
                 <div className="relative">
-                  <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in relative">
-                    <div className="relative flex items-center">
-                      <Input
-                        placeholder="Search products..."
-                        className="w-64 h-9 pr-8"
-                        autoFocus
-                        value={searchQuery}
-                        onChange={(e) => {
-                          setSearchQuery(e.target.value);
-                          setShowSuggestions(true);
-                        }}
-                        onKeyDown={handleKeyDown}
-                        onFocus={() => setShowSuggestions(true)}
-                      />
-                      {searchQuery.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery("");
-                            searchRef.current?.querySelector('input')?.focus();
-                          }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                    <Button type="submit" variant="ghost" size="icon">
+                  <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in">
+                    <Input
+                      placeholder="Search products..."
+                      className="w-64 h-9"
+                      autoFocus
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onKeyDown={handleKeyDown}
+                      onFocus={() => setShowSuggestions(true)}
+                    />
+                    <Button type="submit" variant="ghost" size="icon" aria-label="Search">
                       <Search className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label="Close search"
                       onClick={() => {
                         setIsSearchOpen(false);
                         setSearchQuery("");
@@ -308,7 +260,11 @@ export const Header = () => {
                   {/* Suggestions Dropdown */}
                   {showSuggestions && searchQuery.length >= 2 && (
                     <div className="absolute top-full left-0 mt-2 w-80 bg-background border rounded-lg shadow-lg z-50 overflow-hidden animate-fade-in">
-                      {suggestions.length > 0 ? (
+                      {isLoadingProducts ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : suggestions.length > 0 ? (
                         <>
                           <div className="p-2 border-b bg-muted/50">
                             <span className="text-xs font-medium text-muted-foreground">
@@ -317,7 +273,7 @@ export const Header = () => {
                           </div>
                           {suggestions.map((suggestion) => (
                             <button
-                              key={`${suggestion.type}-${suggestion.id}`}
+                              key={suggestion.id}
                               className="w-full flex items-center gap-3 p-3 hover:bg-accent transition-colors text-left"
                               onClick={() => handleSuggestionClick(suggestion)}
                             >
@@ -328,7 +284,7 @@ export const Header = () => {
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm truncate">
-                                  {renderSuggestionName(suggestion.name, debouncedQuery)}
+                                  {suggestion.name}
                                 </p>
                                 <p className="text-sm text-primary font-semibold">
                                   {formatPrice(suggestion.price)}
@@ -338,7 +294,7 @@ export const Header = () => {
                           ))}
                           <button
                             className="w-full p-3 text-center text-sm text-primary font-medium hover:bg-accent transition-colors border-t"
-                            onClick={handleSearch}
+                            onClick={() => handleSearch()}
                           >
                             View all results for "{searchQuery}"
                           </button>
@@ -355,8 +311,8 @@ export const Header = () => {
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label="Search"
                   onClick={() => setIsSearchOpen(true)}
-                  aria-label="Open search"
                 >
                   <Search className="h-5 w-5" />
                 </Button>
@@ -364,6 +320,7 @@ export const Header = () => {
             </div>
 
             {/* Mobile Search */}
+            {/* Bug #47: Mobile search now has auto-suggestions dropdown */}
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search">
@@ -371,27 +328,83 @@ export const Header = () => {
                 </Button>
               </SheetTrigger>
               <SheetContent side="top" className="h-auto">
-                <form onSubmit={handleSearch} className="flex items-center gap-2 mt-4">
-                  <Input
-                    placeholder="Search products..."
-                    className="flex-1"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  <Button type="submit" size="icon">
-                    <Search className="h-4 w-4" />
-                  </Button>
-                </form>
+                <div className="relative mt-4" ref={searchRef}>
+                  <form onSubmit={handleSearch} className="flex items-center gap-2">
+                    <Input
+                      placeholder="Search products..."
+                      className="flex-1"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      autoFocus
+                    />
+                    <Button type="submit" size="icon" aria-label="Search">
+                      <Search className="h-4 w-4" />
+                    </Button>
+                  </form>
+                  {/* Mobile Suggestions Dropdown */}
+                  {showSuggestions && searchQuery.length >= 2 && (
+                    <div className="absolute top-full left-0 mt-2 w-full bg-background border rounded-lg shadow-lg z-50 overflow-hidden max-h-80 overflow-y-auto">
+                      {isLoadingProducts ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : suggestions.length > 0 ? (
+                        <>
+                          <div className="p-2 border-b bg-muted/50 sticky top-0">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Suggestions
+                            </span>
+                          </div>
+                          {suggestions.map((suggestion) => (
+                            <button
+                              key={suggestion.id}
+                              className="w-full flex items-center gap-3 p-3 hover:bg-accent transition-colors text-left border-b last:border-b-0"
+                              onClick={() => handleSuggestionClick(suggestion)}
+                            >
+                              <img
+                                src={suggestion.image}
+                                alt={suggestion.name}
+                                className="w-12 h-12 object-cover rounded"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">
+                                  {suggestion.name}
+                                </p>
+                                <p className="text-sm text-primary font-semibold">
+                                  {formatPrice(suggestion.price)}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                          <button
+                            className="w-full p-3 text-center text-sm text-primary font-medium hover:bg-accent transition-colors border-t sticky bottom-0 bg-background"
+                            onClick={() => handleSearch()}
+                          >
+                            View all results for "{searchQuery}"
+                          </button>
+                        </>
+                      ) : (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No products found for "{searchQuery}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </SheetContent>
             </Sheet>
 
             {/* Wishlist */}
-            <Link to="/wishlist">
-              <Button variant="ghost" size="icon" className="relative" aria-label="Wishlist">
+            <Link to="/wishlist" aria-label="Wishlist">
+              <Button variant="ghost" size="icon" className="relative min-w-[44px] min-h-[44px]" aria-label="View wishlist">
                 <Heart className="h-5 w-5" />
                 {wishlistItems > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
-                    {wishlistItems}
+                  <span className="absolute -top-1 -right-1 h-5 w-5 min-w-[20px] rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
+                    {wishlistItems > 99 ? "99+" : wishlistItems}
                   </span>
                 )}
               </Button>
@@ -401,55 +414,56 @@ export const Header = () => {
             <Button
               variant="ghost"
               size="icon"
-              className="relative"
-              onClick={() => setIsCartOpen(true)}
+              className="relative min-w-[44px] min-h-[44px]"
               aria-label="Shopping cart"
+              onClick={() => setIsCartOpen(true)}
             >
               <ShoppingBag className="h-5 w-5" />
               {cartItems > 0 && (
-                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
-                  {cartItems}
+                <span className="absolute -top-1 -right-1 h-5 w-5 min-w-[20px] rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
+                  {cartItems > 99 ? "99+" : cartItems}
                 </span>
               )}
             </Button>
 
             {/* User Account */}
-            {user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="User account">
-                    <User className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem asChild>
-                    <Link to="/account" className="w-full cursor-pointer">
-                      <UserIcon className="mr-2 h-4 w-4" />
-                      My Account
-                    </Link>
-                  </DropdownMenuItem>
-                  {user?.isAdmin && (
-                    <DropdownMenuItem asChild>
-                      <Link to="/admin" className="w-full cursor-pointer">
-                        <Settings className="mr-2 h-4 w-4" />
-                        Admin Dashboard
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-red-600 focus:text-red-600">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
-              <Link to="/auth">
-                <Button variant="ghost" size="icon">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="min-w-[44px] min-h-[44px]" aria-label="Account">
                   <User className="h-5 w-5" />
                 </Button>
-              </Link>
-            )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 bg-background border shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200">
+                {user ? (
+                  <>
+                    <DropdownMenuItem disabled className="opacity-100 font-medium pb-2 border-b mb-1">
+                      Hi, {user.firstName}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent">
+                      <Link to="/account" className="w-full cursor-pointer">My Account</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent cursor-pointer" onClick={logout}>
+                      Logout
+                    </DropdownMenuItem>
+                    {/* Bug #113: Admin Login only visible to admin users */}
+                    {user.isAdmin && (
+                      <>
+                        <DropdownMenuSeparator className="bg-border" />
+                        <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-primary/10">
+                          <Link to="/admin/login" className="w-full cursor-pointer text-primary font-medium">Admin Panel</Link>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent">
+                      <Link to="/auth" className="w-full cursor-pointer">Login or Register</Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>

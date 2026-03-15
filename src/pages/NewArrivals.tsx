@@ -1,16 +1,17 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { useNewArrivals } from "@/hooks/useProducts";
 import { ProductCard } from "@/components/products/ProductCard";
+import { useNewArrivals } from "@/hooks/useProducts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
 
 const NewArrivals = () => {
-  const { data: products, isLoading, error } = useNewArrivals();
+  const { data: products = [], isLoading } = useNewArrivals();
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-
+      
       <main className="flex-1">
         <div className="container px-4 py-8">
           <div className="mb-8">
@@ -30,20 +31,16 @@ const NewArrivals = () => {
                 </div>
               ))}
             </div>
-          ) : error ? (
-            <div className="text-center py-12">
-              <p className="text-destructive">{error.message}</p>
-            </div>
-          ) : !products || products.length === 0 ? (
+          ) : products.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground text-lg">
-                No products available yet.
+                No new arrivals available yet.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
               {products.map((product) => (
-                <ProductCard key={product._id || product.id} product={product as any} />
+                <ProductCard key={product._id || product.id} product={product} />
               ))}
             </div>
           )}

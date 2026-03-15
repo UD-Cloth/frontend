@@ -1,19 +1,20 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { SlidersHorizontal, X, Grid, List } from "lucide-react";
+import { SlidersHorizontal, X, Grid, List, Home } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProductCard } from "@/components/products/ProductCard";
-import { useCategories, useProductsByCategory, useProducts } from "@/hooks/useProducts";
+import { useProductsByCategory, useCategories } from "@/hooks/useProducts";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const sizes = ["S", "M", "L", "XL", "XXL"];
-const colors = ["Black", "White", "Navy", "Grey", "Maroon"];
-const priceRanges = [
+const defaultSizes = ["S", "M", "L", "XL", "XXL"];
+const defaultColors = ["Black", "White", "Navy", "Grey", "Maroon"];
+const defaultPriceRanges = [
   { label: "Under ₹1000", min: 0, max: 1000 },
   { label: "₹1000 - ₹2000", min: 1000, max: 2000 },
   { label: "₹2000 - ₹3000", min: 2000, max: 3000 },
@@ -21,8 +22,7 @@ const priceRanges = [
 ];
 
 const CategoryPage = () => {
-  const { categoryId: rawCategoryId } = useParams<{ categoryId: string }>();
-  const categoryId = rawCategoryId ? decodeURIComponent(rawCategoryId) : undefined;
+  const { categoryId } = useParams<{ categoryId: string }>();
   const [sortBy, setSortBy] = useState("newest");
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
@@ -30,13 +30,95 @@ const CategoryPage = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-  const { data: categories = [] } = useCategories();
-  const category = categoryId ? categories.find((c) => c.name === categoryId) : undefined;
-  const { data: catProds = [], isLoading: catIsLoading } = useProductsByCategory(categoryId);
-  const { data: allProds = [], isLoading: allIsLoading } = useProducts();
+  const { data: categoryProducts = [], isLoading: isProductsLoading } = useProductsByCategory(categoryId);
+  const { data: categories = [], isLoading: isCategoriesLoading } = useCategories();
 
-  const categoryProducts = categoryId ? catProds : allProds;
-  const isLoading = categoryId ? catIsLoading : allIsLoading;
+  const category = categories.find((c) => c.name === categoryId || c._id === categoryId);
+
+  // Bug #108/#109/#110: Derive available sizes, colors, and prices from actual product inventory
+  const availableFilters = useMemo(() => {
+    const uniqueSizes = new Set<string>();
+    const uniqueColors = new Set<string>();
+    let minPrice = Infinity;
+    let maxPrice = 0;
+
+    categoryProducts.forEach((p: any) => {
+      if (p.sizes && Array.isArray(p.sizes)) {
+        p.sizes.forEach((s: string) => uniqueSizes.add(s));
+      }
+      if (p.colors) {
+        if (Array.isArray(p.colors)) {
+          p.colors.forEach((c: any) => {
+            const colorName = typeof c === 'string' ? c : c.name;
+            if (colorName) uniqueColors.add(colorName);
+          });
+        }
+      }
+      if (p.price) {
+        minPrice = Math.min(minPrice, p.price);
+        maxPrice = Math.max(maxPrice, p.price);
+      }
+    });
+
+    const sizes = Array.from(uniqueSizes).length > 0
+      ? Array.from(uniqueSizes).sort()
+      : defaultSizes;
+    const colors = Array.from(uniqueColors).length > 0
+      ? Array.from(uniqueColors).sort()
+      : defaultColors;
+
+    return { sizes, colors, minPrice, maxPrice };
+  }, [categoryProducts]);
+
+  if (isProductsLoading || isCategoriesLoading) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1">
+          <div className="container px-4 py-8">
+            <Skeleton className="h-10 w-48 mb-8" />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="space-y-3">
+                  <Skeleton className="aspect-square w-full rounded-lg" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Bug #106: Show 404-style message if category slug is not found
+  if (!isCategoriesLoading && categories.length > 0 && !category && categoryProducts.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex flex-col items-center justify-center text-center px-4 py-16">
+          <h1 className="text-3xl font-bold mb-2">Category Not Found</h1>
+          <p className="text-muted-foreground mb-6 max-w-md">
+            We couldn't find a category matching "{categoryId}". Browse our available categories below.
+          </p>
+          <div className="flex flex-wrap gap-3 justify-center mb-8">
+            {categories.map((c) => (
+              <Link key={c._id} to={`/category/${c.name}`}>
+                <Button variant="outline">{c.name}</Button>
+              </Link>
+            ))}
+          </div>
+          <Button asChild>
+            <Link to="/">Back to Home</Link>
+          </Button>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   // Apply filters
   let filteredProducts = [...categoryProducts];
@@ -49,7 +131,7 @@ const CategoryPage = () => {
 
   if (selectedColors.length > 0) {
     filteredProducts = filteredProducts.filter((p) =>
-      p.colors.some((c) => selectedColors.includes(c.name))
+      p.colors.some((c: any) => selectedColors.includes(typeof c === 'string' ? c : c.name))
     );
   }
 
@@ -103,7 +185,7 @@ const CategoryPage = () => {
       <div>
         <h4 className="font-medium mb-3">Size</h4>
         <div className="flex flex-wrap gap-2">
-          {sizes.map((size) => (
+          {availableFilters.sizes.map((size) => (
             <button
               key={size}
               onClick={() => toggleSize(size)}
@@ -124,7 +206,7 @@ const CategoryPage = () => {
       <div>
         <h4 className="font-medium mb-3">Color</h4>
         <div className="space-y-2">
-          {colors.map((color) => (
+          {availableFilters.colors.map((color) => (
             <label key={color} className="flex items-center gap-2 cursor-pointer">
               <Checkbox
                 checked={selectedColors.includes(color)}
@@ -140,7 +222,7 @@ const CategoryPage = () => {
       <div>
         <h4 className="font-medium mb-3">Price Range</h4>
         <div className="space-y-2">
-          {priceRanges.map((range, index) => (
+          {defaultPriceRanges.map((range, index) => (
             <label key={index} className="flex items-center gap-2 cursor-pointer">
               <Checkbox
                 checked={selectedPriceRange === index}
@@ -179,7 +261,7 @@ const CategoryPage = () => {
               <div className="text-center text-background">
                 <h1 className="text-3xl md:text-5xl font-bold mb-2">{category.name}</h1>
                 <nav className="text-sm">
-                  <Link to="/" className="hover:underline">Home</Link>
+                  <Link to="/" className="hover:underline inline-flex items-center gap-1"><Home className="h-3 w-3" />Home</Link>
                   <span className="mx-2">/</span>
                   <span>{category.name}</span>
                 </nav>
@@ -209,14 +291,20 @@ const CategoryPage = () => {
                   <SheetHeader>
                     <SheetTitle>Filters</SheetTitle>
                   </SheetHeader>
-                  <div className="mt-6">
+                  <div className="mt-6 pb-20">
                     <FilterContent />
+                  </div>
+                  {/* Bug #208: Add close button at bottom for mobile */}
+                  <div className="absolute bottom-4 left-4 right-4">
+                    <SheetClose asChild>
+                      <Button variant="default" className="w-full">Close Filters</Button>
+                    </SheetClose>
                   </div>
                 </SheetContent>
               </Sheet>
 
               <p className="text-sm text-muted-foreground">
-                {isLoading ? "Loading..." : `${filteredProducts.length} products`}
+                {filteredProducts.length} products
               </p>
             </div>
 
@@ -317,25 +405,7 @@ const CategoryPage = () => {
 
             {/* Product Grid */}
             <div className="flex-1">
-              {isLoading ? (
-                <div className={cn(
-                  "grid gap-4",
-                  viewMode === "grid"
-                    ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                    : "grid-cols-1"
-                )}>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="animate-pulse space-y-3">
-                      <div className="bg-muted rounded-lg aspect-[3/4]" />
-                      <div className="space-y-2 px-1">
-                        <div className="h-4 bg-muted rounded w-3/4" />
-                        <div className="h-3 bg-muted rounded w-1/2" />
-                        <div className="h-5 bg-muted rounded w-1/3" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : filteredProducts.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <div className="text-center py-12">
                   <p className="text-lg text-muted-foreground mb-4">
                     No products found matching your filters.
@@ -343,18 +413,49 @@ const CategoryPage = () => {
                   <Button onClick={clearFilters}>Clear Filters</Button>
                 </div>
               ) : (
-                <div
-                  className={cn(
-                    "grid gap-4",
-                    viewMode === "grid"
-                      ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
-                      : "grid-cols-1"
-                  )}
-                >
-                  {filteredProducts.map((product) => (
-                    <ProductCard key={product._id || product.id} product={product} />
-                  ))}
-                </div>
+                viewMode === "grid" ? (
+                  <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                    {filteredProducts.map((product) => (
+                      <ProductCard key={product._id || product.id} product={product} />
+                    ))}
+                  </div>
+                ) : (
+                  // Bug #107: List view uses proper horizontal card layout
+                  <div className="flex flex-col gap-4">
+                    {filteredProducts.map((product) => {
+                      const pid = product._id || product.id;
+                      const displayPrice = (product as any).discountPrice || product.price;
+                      const originalPrice = (product as any).discountPrice ? product.price : product.originalPrice;
+                      return (
+                        <Link key={pid} to={`/product/${pid}`} className="flex gap-4 border rounded-lg p-4 hover:shadow-md transition-shadow bg-background">
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            loading="lazy"
+                            className="w-24 h-32 object-cover rounded-md flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0 flex flex-col justify-between">
+                            <div>
+                              {(product as any).brand && (
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{(product as any).brand}</p>
+                              )}
+                              <h3 className="font-semibold text-sm md:text-base line-clamp-2">{product.name}</h3>
+                              <p className="text-muted-foreground text-xs md:text-sm mt-1 line-clamp-2">{product.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="font-bold text-primary">
+                                ₹{displayPrice.toLocaleString()}
+                              </span>
+                              {originalPrice && originalPrice > displayPrice && (
+                                <span className="text-sm text-muted-foreground line-through">₹{originalPrice.toLocaleString()}</span>
+                              )}
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )
               )}
             </div>
           </div>

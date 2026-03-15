@@ -1,166 +1,146 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Star, Loader2, Trash2 } from "lucide-react";
+import { Star, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { type ReviewItem } from "@/hooks/useProducts";
-import api from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
+import { useProductReviews, useAddReview } from "@/hooks/useProducts";
+import { useAuthContext } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
-interface ProductReviewsProps {
-  productId: string;
-  isLoggedIn: boolean;
-  reviews?: ReviewItem[];
-}
-
-export const ProductReviews = ({ productId, isLoggedIn, reviews = [] }: ProductReviewsProps) => {
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState("");
+// Bug #70/#71: Show product reviews and allow authenticated buyers to submit a review
+export const ProductReviews = ({ productId }: { productId: string }) => {
+  const { data: reviews = [], isLoading } = useProductReviews(productId);
+  const addReview = useAddReview(productId);
+  const { user } = useAuthContext();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const userInfoStr = localStorage.getItem("userInfo");
-  const currentUserId = userInfoStr ? JSON.parse(userInfoStr)._id : null;
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [showForm, setShowForm] = useState(false);
 
-  const addReviewMutation = useMutation({
-    mutationFn: async (body: { rating: number; comment: string }) => {
-      const { data } = await api.post(`/products/${productId}/reviews`, body);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["reviews", productId] });
-      queryClient.invalidateQueries({ queryKey: ["product", productId] });
-      setComment("");
-      setRating(5);
-      toast({ title: "Review added" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!comment.trim()) {
-      toast({ title: "Please enter a comment", variant: "destructive" });
+    if (!rating) {
+      toast({ variant: "destructive", title: "Rating required", description: "Please select a star rating." });
       return;
     }
-    addReviewMutation.mutate({ rating, comment: comment.trim() });
-  };
-
-  const deleteReviewMutation = useMutation({
-    mutationFn: async (reviewId: string) => {
-      const { data } = await api.delete(`/products/${productId}/reviews/${reviewId}`);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["reviews", productId] });
-      queryClient.invalidateQueries({ queryKey: ["product", productId] });
-      toast({ title: "Review deleted successfully" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error deleting review", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const formatDate = (dateStr: string) => {
+    if (!comment.trim()) {
+      toast({ variant: "destructive", title: "Comment required", description: "Please write a brief review." });
+      return;
+    }
     try {
-      return new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-    } catch {
-      return dateStr;
+      await addReview.mutateAsync({ rating, comment });
+      toast({ title: "Review Submitted", description: "Thank you for your review!" });
+      setRating(0);
+      setComment("");
+      setShowForm(false);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Review Failed", description: err.message || "Could not submit review." });
     }
   };
 
   return (
     <section className="border-t pt-8 mt-8">
-      <h2 className="text-xl font-semibold mb-4">
-        Reviews ({reviews.length})
-      </h2>
+      <div className="container px-4 md:px-8">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold">Customer Reviews ({reviews.length})</h2>
+          {user && !showForm && (
+            <Button variant="outline" size="sm" onClick={() => setShowForm(true)}>
+              Write a Review
+            </Button>
+          )}
+        </div>
 
-      {isLoggedIn && (
-        <form onSubmit={handleSubmit} className="mb-8 p-4 rounded-lg bg-secondary/30 space-y-4">
-          <div>
-            <label className="text-sm font-medium block mb-2">Your rating</label>
-            <div className="flex gap-1">
-              {[1, 2, 3, 4, 5].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setRating(r)}
-                  className="p-1 rounded focus:outline-none"
-                >
-                  <Star
-                    className={`h-6 w-6 ${r <= rating ? "fill-primary text-primary" : "text-muted-foreground"
-                      }`}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium block mb-2">Your review</label>
-            <Input
-              placeholder="Share your experience..."
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
-          <Button type="submit" disabled={addReviewMutation.isPending}>
-            {addReviewMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit review"}
-          </Button>
-        </form>
-      )}
-
-      {!isLoggedIn && (
-        <p className="text-sm text-muted-foreground mb-4">
-          <Link to="/auth" className="text-primary underline">Sign in</Link> to leave a review.
-        </p>
-      )}
-
-      {reviews.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No reviews yet. Be the first to review!</p>
-      ) : (
-        <ul className="space-y-4">
-          {reviews.map((review: ReviewItem) => (
-            <li key={review._id} className="border-b pb-4 last:border-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-medium">
-                  {review.user?.firstName} {review.user?.lastName}
-                </span>
-                <span className="flex gap-0.5">
-                  {[1, 2, 3, 4, 5].map((r) => (
-                    <Star
-                      key={r}
-                      className={`h-4 w-4 ${r <= review.rating ? "fill-primary text-primary" : "text-muted-foreground"
-                        }`}
-                    />
-                  ))}
-                </span>
-                <span className="text-xs text-muted-foreground">{formatDate(review.createdAt)}</span>
-              </div>
-              <p className="text-sm text-muted-foreground">{review.comment}</p>
-
-              {/* Delete Button for Author */}
-              {isLoggedIn && review.user?._id === currentUserId && (
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive gap-1"
-                    onClick={() => deleteReviewMutation.mutate(review._id)}
-                    disabled={deleteReviewMutation.isPending}
+        {/* Review Form */}
+        {showForm && user && (
+          <form onSubmit={handleSubmit} className="mb-8 p-5 border rounded-xl bg-muted/30 space-y-4">
+            <h3 className="font-semibold">Your Review</h3>
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Rating</p>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => setRating(star)}
                   >
-                    {deleteReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    Delete
-                  </Button>
+                    <Star
+                      className={cn(
+                        "h-7 w-7 transition-colors",
+                        (hoverRating || rating) >= star
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-muted-foreground"
+                      )}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">Comment</p>
+              <Textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Share your experience with this product..."
+                rows={4}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button type="submit" disabled={addReview.isPending}>
+                {addReview.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Submit Review
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+            </div>
+          </form>
+        )}
+
+        {/* Reviews List */}
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : reviews.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">No reviews yet. Be the first to review this product!</p>
+        ) : (
+          <div className="space-y-5">
+            {reviews.map((review: any) => (
+              <div key={review._id} className="border-b pb-5 last:border-0">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Star
+                        key={star}
+                        className={cn(
+                          "h-4 w-4",
+                          review.rating >= star ? "fill-amber-400 text-amber-400" : "text-muted-foreground"
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <span className="font-semibold text-sm">
+                    {review.user?.firstName} {review.user?.lastName}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(review.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+                <p className="text-sm text-foreground leading-relaxed">{review.comment}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!user && (
+          <p className="text-sm text-muted-foreground mt-4 text-center">
+            <Link to="/auth?returnUrl=/product/" className="underline hover:text-foreground">Sign in</Link> to leave a review.
+          </p>
+        )}
+      </div>
     </section>
   );
 };

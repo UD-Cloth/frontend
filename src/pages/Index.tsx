@@ -5,6 +5,7 @@ import { CategoryGrid } from "@/components/home/CategoryGrid";
 import { ProductCarousel } from "@/components/home/ProductCarousel";
 import { TrustBadges } from "@/components/home/TrustBadges";
 import { PromoBanner } from "@/components/home/PromoBanner";
+import { Testimonials } from "@/components/home/Testimonials";
 import { useNewArrivals, useTrendingProducts } from "@/hooks/useProducts";
 import { Loader2 } from "lucide-react";
 
@@ -50,6 +51,9 @@ const Index = () => {
           products={trendingProducts}
           viewAllLink="/trending"
         />
+
+        {/* Testimonials */}
+        <Testimonials />
       </main>
 
       <Footer />
