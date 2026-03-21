@@ -16,8 +16,8 @@ export function useAdminUsers() {
   return useQuery<User[]>({
     queryKey: ['adminUsers'],
     queryFn: async () => {
-      const { data } = await api.get('/admin/users');
-      return data;
+      const { data } = await api.get<any>('/admin/users');
+      return data.data || data;
     },
   });
 }

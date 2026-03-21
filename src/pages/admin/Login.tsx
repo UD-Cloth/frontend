@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import api from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -33,15 +34,30 @@ export default function AdminLogin() {
 
     const onSubmit = async (data: LoginFormValues) => {
         setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-            // Mock validation: any email containing 'admin' gets admin role, otherwise sub-admin
-            const role = data.email.includes('admin') ? 'admin' : 'sub-admin';
-            login(data.email, role);
+        try {
+            const response = await api.post<any>('/auth/login', {
+                email: data.email,
+                password: data.password
+            });
+            const user = response.data;
+
+            if (!user.isAdmin) {
+                toast.error('Access denied. Admin privileges required.');
+                setIsLoading(false);
+                return;
+            }
+
+            // Save user to localStorage to maintain session for API calls
+            localStorage.setItem('userInfo', JSON.stringify(user));
+
+            login(user.email, 'admin');
             toast.success('Logged in successfully');
             navigate('/admin/dashboard');
+        } catch (error: any) {
+            toast.error(error.response?.data?.message || 'Invalid email or password');
+        } finally {
             setIsLoading(false);
-        }, 1000);
+        }
     };
 
     return (

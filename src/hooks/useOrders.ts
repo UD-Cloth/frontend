@@ -111,8 +111,9 @@ export function useAllOrders() {
   return useQuery<Order[]>({
     queryKey: ['allOrders'],
     queryFn: async () => {
-      const { data } = await api.get<Order[]>('/orders');
-      return data;
+      const { data } = await api.get<any>('/orders');
+      // Extract the array from the paginated response { data, pagination }
+      return data.data || data;
     },
     // Bug #154: Add auto-refresh polling for orders
     refetchInterval: 30000,
