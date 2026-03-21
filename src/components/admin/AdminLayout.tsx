@@ -11,7 +11,8 @@ import {
     Menu,
     Moon,
     Sun,
-    Bell
+    Bell,
+    Tags
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAdminAuthStore } from '@/stores/adminAuthStore';
@@ -22,6 +23,7 @@ import { useState, useEffect } from 'react';
 const ADMIN_LINKS = [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Products', path: '/admin/products', icon: Package },
+    { name: 'Categories', path: '/admin/categories', icon: Tags },
     { name: 'Orders', path: '/admin/orders', icon: ShoppingCart },
     { name: 'Users', path: '/admin/users', icon: Users },
     { name: 'CMS', path: '/admin/cms', icon: FileText },

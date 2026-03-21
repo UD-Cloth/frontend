@@ -57,8 +57,26 @@ export default function AdminProductForm() {
     const [imageFiles, setImageFiles] = useState<File[]>([]);
     const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
-    const availableSizes = ['S', 'M', 'L', 'XL', 'XXL'];
-    const availableColors = ['Black', 'White', 'Navy', 'Grey', 'Red', 'Olive', 'Beige'];
+    const availableSizes = ['S', 'M', 'L', 'XL', 'XXL', '28', '30', '32', '34', '36'];
+    const availableColors = ['Black', 'White', 'Navy', 'Grey', 'Red', 'Olive', 'Beige', 'Light Blue', 'Pink', 'Maroon', 'Blue', 'Dark Blue', 'Brown', 'Red Check', 'Blue Check'];
+
+    const COLOR_HEX_MAP: Record<string, string> = {
+        'Black': '#000000',
+        'White': '#FFFFFF',
+        'Navy': '#1e3a5f',
+        'Grey': '#808080',
+        'Red': '#DC2626',
+        'Olive': '#808000',
+        'Beige': '#F5F5DC',
+        'Light Blue': '#87CEEB',
+        'Pink': '#FFB6C1',
+        'Maroon': '#800000',
+        'Blue': '#1e3a5f',
+        'Dark Blue': '#1a1a2e',
+        'Brown': '#8B4513',
+        'Red Check': '#DC2626',
+        'Blue Check': '#1e3a5f'
+    };
 
     const form = useForm<ProductFormValues>({
         resolver: zodResolver(productSchema),
@@ -78,7 +96,7 @@ export default function AdminProductForm() {
         if (existingProduct) {
             form.reset({
                 name: existingProduct.name,
-                category: typeof existingProduct.category === 'string' ? existingProduct.category : existingProduct.category?.name || '',
+                category: typeof existingProduct.category === 'string' ? existingProduct.category : existingProduct.category?._id || '',
                 brand: existingProduct.brand || '',
                 description: existingProduct.description || '',
                 status: (existingProduct.status as 'active' | 'inactive') || 'active',
@@ -92,7 +110,7 @@ export default function AdminProductForm() {
                 material: existingProduct.material,
             });
             setSelectedSizes(existingProduct.sizes || []);
-            setSelectedColors(existingProduct.colors || []);
+            setSelectedColors((existingProduct.colors || []).map((c: any) => typeof c === 'string' ? c : c.name));
             setTags(existingProduct.tags || []);
             setImagePreviews(existingProduct.images || []);
         }
@@ -160,7 +178,7 @@ export default function AdminProductForm() {
         const completeProduct = {
             ...data,
             sizes: selectedSizes,
-            colors: selectedColors,
+            colors: selectedColors.map(c => ({ name: c, hex: COLOR_HEX_MAP[c] || '#000000' })),
             tags: tags,
             images: imagePreviews, // Storing blobs/urls for now
             rating: existingProduct?.rating || 0,
@@ -230,7 +248,7 @@ export default function AdminProductForm() {
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {categories.map((category) => (
-                                                    <SelectItem key={category._id} value={category.name}>
+                                                    <SelectItem key={category._id} value={category._id}>
                                                         {category.name}
                                                     </SelectItem>
                                                 ))}

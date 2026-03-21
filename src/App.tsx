@@ -46,6 +46,7 @@ import AdminOrders from "@/pages/admin/Orders";
 import AdminUsers from "@/pages/admin/Users";
 import AdminCMS from "@/pages/admin/CMS";
 import AdminSettings from "@/pages/admin/Settings";
+import AdminCategories from "@/pages/admin/Categories";
 import AdminNotifications from "@/pages/admin/Notifications";
 
 // Bug #171: Scroll to top on every route change
@@ -109,6 +110,7 @@ const AppContent = () => {
               <Routes>
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="products" element={<AdminProducts />} />
+                <Route path="categories" element={<AdminCategories />} />
                 <Route path="products/new" element={<AdminProductForm />} />
                 <Route path="products/edit/:id" element={<AdminProductForm />} />
                 <Route path="orders" element={<AdminOrders />} />
