@@ -1,13 +1,10 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
-// Bug #19/#33/#35/#36: Use cartStore (Zustand) as the single source of truth for cart
-// CartContext was a legacy parallel implementation causing desyncs
 import { useCartStore } from "@/stores/cartStore";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
-import { useEffect } from "react";
-import api from "@/lib/api";
+import { formatPrice } from "@/lib/utils";
+import { pcount } from "@/lib/pluralize";
 
 interface CartDrawerProps {
   open: boolean;
@@ -15,43 +12,11 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
-  const { items, removeItem, updateQuantity } = useCartStore();
-
-  // Bug #145: Refresh product prices when cart opens
-  useEffect(() => {
-    if (open && items.length > 0) {
-      // Fetch latest prices for items in cart
-      items.forEach(async (item) => {
-        try {
-          const { data } = await api.get(`/products/${item.productId}`);
-          if (data && data.price && data.price !== item.price) {
-            // Price has changed, update it
-            updateQuantity(item.productId, item.size, item.color, item.quantity);
-          }
-        } catch (err) {
-          console.error('Failed to refresh product price:', err);
-        }
-      });
-    }
-  }, [open]);
+  const items = useCartStore((state) => state.items);
+  const removeItem = useCartStore((state) => state.removeItem);
+  const updateQuantity = useCartStore((state) => state.updateQuantity);
 
   const totalPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
-
-  const handleRemoveItem = (productId: string, size: string, color: string, productName: string) => {
-    removeItem(productId, size, color);
-    toast.success(`Removed from cart`, { description: productName });
-  };
-
-  // Bug #216: Show shipping info based on actual threshold (₹2000)
-  const shipping = totalPrice > 2000 ? 0 : (totalPrice > 0 ? 150 : 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -59,13 +24,13 @@ export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <ShoppingBag className="h-5 w-5" />
-            Your Cart ({items.length})
+            Your Cart ({pcount(items.length, "item")})
           </SheetTitle>
         </SheetHeader>
 
         {items.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
-            <ShoppingBag className="h-12 w-12 text-muted-foreground" />
+            <ShoppingBag className="h-16 w-16 text-muted-foreground" />
             <div>
               <p className="font-medium">Your cart is empty</p>
               <p className="text-sm text-muted-foreground">
@@ -78,43 +43,55 @@ export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-auto py-4">
+            <div className="flex-1 overflow-auto py-4 [-webkit-overflow-scrolling:touch]">
               <div className="space-y-4">
                 {items.map((item) => (
                   <div
                     key={`${item.productId}-${item.size}-${item.color}`}
                     className="flex gap-4 p-4 border rounded-lg"
                   >
-                    <img
-                      src={item.image || ""}
-                      alt={item.name}
-                      className="w-20 h-24 object-cover rounded"
-                    />
+                    {/* Sprint 7 / BUG-F-054: don't render an empty src — Safari
+                        and some browsers fire a network error and show a broken
+                        image. Use a neutral placeholder div when no image. */}
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-20 h-24 object-cover rounded"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div
+                        className="w-20 h-24 rounded bg-muted text-muted-foreground text-xs flex items-center justify-center"
+                        aria-label="No image available"
+                      >
+                        No image
+                      </div>
+                    )}
                     <div className="flex-1">
                       <h4 className="font-medium text-sm line-clamp-2">
                         {item.name}
                       </h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {item.size && `Size: ${item.size}`}{item.size && item.color && " | "}{item.color && `Color: ${item.color}`}
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
+                        Size: {item.size} | Color: {typeof item.color === "string" ? item.color : ((item.color as any)?.name ?? "")}
                       </p>
                       <p className="font-semibold text-primary mt-1">
                         {formatPrice(item.price)}
                       </p>
 
                       <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center border rounded">
-                          {/* Bug #215: Prevent quantity going below 1 */}
+                        <div className="flex items-center border rounded select-none">
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label="Decrease quantity"
                             className="h-8 w-8"
-                            disabled={item.quantity <= 1}
                             onClick={() =>
                               updateQuantity(
                                 item.productId,
                                 item.size,
                                 item.color,
-                                Math.max(1, item.quantity - 1)
+                                item.quantity - 1
                               )
                             }
                           >
@@ -126,13 +103,14 @@ export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label="Increase quantity"
                             className="h-8 w-8"
                             onClick={() =>
                               updateQuantity(
                                 item.productId,
                                 item.size,
                                 item.color,
-                                Math.min(99, item.quantity + 1)
+                                item.quantity + 1
                               )
                             }
                           >
@@ -142,14 +120,10 @@ export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label="Remove item from cart"
                           className="h-8 w-8 text-destructive"
                           onClick={() =>
-                            handleRemoveItem(
-                              item.productId,
-                              item.size,
-                              item.color,
-                              item.name
-                            )
+                            removeItem(item.productId, item.size, item.color)
                           }
                         >
                           <Trash2 className="h-4 w-4" />
@@ -168,23 +142,16 @@ export const CartDrawer = ({ open, onOpenChange }: CartDrawerProps) => {
               </div>
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Shipping</span>
-                {shipping === 0 ? (
-                  <span className="text-emerald-600 font-medium">Free</span>
-                ) : (
-                  <span>{formatPrice(shipping)}</span>
-                )}
+                <span>Calculated at checkout</span>
               </div>
-              {totalPrice > 0 && totalPrice <= 2000 && (
-                <p className="text-xs text-muted-foreground">
-                  Add {formatPrice(2000 - totalPrice)} more for free shipping
-                </p>
-              )}
               <div className="flex items-center justify-between font-semibold text-lg">
                 <span>Total</span>
-                <span className="text-primary">{formatPrice(totalPrice + shipping)}</span>
+                <span className="text-primary">{formatPrice(totalPrice)}</span>
               </div>
-              <Button className="w-full" size="lg" asChild onClick={() => onOpenChange(false)}>
-                <Link to="/checkout">Proceed to Checkout</Link>
+              <Button className="w-full" size="lg" asChild>
+                <Link to="/checkout" onClick={() => onOpenChange(false)}>
+                  Proceed to Checkout
+                </Link>
               </Button>
               <Button
                 variant="outline"

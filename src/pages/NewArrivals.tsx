@@ -1,17 +1,19 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ProductCard } from "@/components/products/ProductCard";
-import { useNewArrivals } from "@/hooks/useProducts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2 } from "lucide-react";
+import { useNewArrivals } from "@/hooks/useProducts";
+import SEO from "@/components/SEO";
 
 const NewArrivals = () => {
-  const { data: products = [], isLoading } = useNewArrivals();
+  // Sprint 5 / BUG-F-030: real API instead of demo store.
+  const { data: newArrivals = [], isLoading, error } = useNewArrivals();
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEO title="New arrivals" description="Just-landed pieces from Urban Drape." />
       <Header />
-      
+
       <main className="flex-1">
         <div className="container px-4 py-8">
           <div className="mb-8">
@@ -31,15 +33,22 @@ const NewArrivals = () => {
                 </div>
               ))}
             </div>
-          ) : products.length === 0 ? (
+          ) : error ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground text-lg">
+              <p className="text-destructive">Could not load products. Please try again.</p>
+            </div>
+          ) : newArrivals.length === 0 ? (
+            <div className="text-center py-16 border border-dashed rounded-lg bg-muted/10">
+              <p className="text-muted-foreground text-lg mb-2">
                 No new arrivals available yet.
+              </p>
+              <p className="text-sm text-muted-foreground/80">
+                Products marked as "New Arrival" in your Admin Panel will appear here.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-              {products.map((product) => (
+              {newArrivals.map((product: any) => (
                 <ProductCard key={product._id || product.id} product={product} />
               ))}
             </div>

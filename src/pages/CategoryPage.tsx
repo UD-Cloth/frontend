@@ -10,10 +10,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ProductCard } from "@/components/products/ProductCard";
 import { useProductsByCategory, useCategories } from "@/hooks/useProducts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
+import SEO from "@/components/SEO";
 
 const defaultSizes = ["S", "M", "L", "XL", "XXL"];
 const defaultColors = ["Black", "White", "Navy", "Grey", "Maroon"];
+const colorMap: Record<string, string> = {
+  Black: "bg-black",
+  White: "bg-white border-border border",
+  Navy: "bg-blue-900",
+  Grey: "bg-gray-500",
+  Maroon: "bg-red-800",
+  Blue: "bg-blue-700",
+  Red: "bg-red-600",
+  Green: "bg-green-700",
+  Brown: "bg-yellow-900",
+  Pink: "bg-pink-300",
+};
 const defaultPriceRanges = [
   { label: "Under ₹1000", min: 0, max: 1000 },
   { label: "₹1000 - ₹2000", min: 1000, max: 2000 },
@@ -136,7 +149,7 @@ const CategoryPage = () => {
   }
 
   if (selectedPriceRange !== null) {
-    const range = priceRanges[selectedPriceRange];
+    const range = defaultPriceRanges[selectedPriceRange];
     filteredProducts = filteredProducts.filter(
       (p) => p.price >= range.min && p.price <= range.max
     );
@@ -181,6 +194,15 @@ const CategoryPage = () => {
 
   const FilterContent = () => (
     <div className="space-y-6">
+      {/* Bug #60: sticky Clear-all visible at top of filter sidebar when active */}
+      {hasActiveFilters && (
+        <div className="sticky top-0 z-10 bg-background pb-3 -mx-1 px-1 border-b">
+          <Button variant="outline" size="sm" className="w-full" onClick={clearFilters}>
+            <X className="h-3.5 w-3.5 mr-1.5" />
+            Clear all filters
+          </Button>
+        </div>
+      )}
       {/* Size Filter */}
       <div>
         <h4 className="font-medium mb-3">Size</h4>
@@ -190,10 +212,10 @@ const CategoryPage = () => {
               key={size}
               onClick={() => toggleSize(size)}
               className={cn(
-                "px-3 py-1.5 rounded border text-sm transition-colors",
+                "w-10 h-10 rounded-full border text-sm font-medium transition-all flex items-center justify-center hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
                 selectedSizes.includes(size)
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border hover:border-primary"
+                  ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90"
+                  : "bg-background text-foreground border-border hover:border-primary"
               )}
             >
               {size}
@@ -205,15 +227,20 @@ const CategoryPage = () => {
       {/* Color Filter */}
       <div>
         <h4 className="font-medium mb-3">Color</h4>
-        <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
           {availableFilters.colors.map((color) => (
-            <label key={color} className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={selectedColors.includes(color)}
-                onCheckedChange={() => toggleColor(color)}
-              />
-              <span className="text-sm">{color}</span>
-            </label>
+            <button
+              key={color}
+              title={color}
+              onClick={() => toggleColor(color)}
+              className={cn(
+                "w-8 h-8 rounded-full border-2 transition-all ring-offset-background",
+                colorMap[color] || "bg-gray-300",
+                selectedColors.includes(color)
+                  ? "ring-2 ring-primary ring-offset-2 scale-110 border-transparent"
+                  : "border-transparent hover:scale-105"
+              )}
+            />
           ))}
         </div>
       </div>
@@ -246,6 +273,14 @@ const CategoryPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEO
+        title={category?.name ? `${category.name}` : 'Category'}
+        description={
+          category?.name
+            ? `Shop ${category.name} from Urban Drape — modern Indian apparel.`
+            : 'Browse Urban Drape categories.'
+        }
+      />
       <Header />
 
       <main className="flex-1">
@@ -379,7 +414,7 @@ const CategoryPage = () => {
                   className="h-7"
                   onClick={() => setSelectedPriceRange(null)}
                 >
-                  {priceRanges[selectedPriceRange].label}
+                  {defaultPriceRanges[selectedPriceRange].label}
                   <X className="h-3 w-3 ml-1" />
                 </Button>
               )}
@@ -424,30 +459,30 @@ const CategoryPage = () => {
                   <div className="flex flex-col gap-4">
                     {filteredProducts.map((product) => {
                       const pid = product._id || product.id;
-                      const displayPrice = (product as any).discountPrice || product.price;
-                      const originalPrice = (product as any).discountPrice ? product.price : product.originalPrice;
+                      const displayPrice = product.discountPrice || product.price;
+                      const originalPrice = product.discountPrice ? product.price : product.originalPrice;
                       return (
                         <Link key={pid} to={`/product/${pid}`} className="flex gap-4 border rounded-lg p-4 hover:shadow-md transition-shadow bg-background">
                           <img
-                            src={product.image}
+                            src={product.images?.[0] || product.image || ""}
                             alt={product.name}
                             loading="lazy"
                             className="w-24 h-32 object-cover rounded-md flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0 flex flex-col justify-between">
                             <div>
-                              {(product as any).brand && (
-                                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{(product as any).brand}</p>
+                              {product.brand && (
+                                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{product.brand}</p>
                               )}
                               <h3 className="font-semibold text-sm md:text-base line-clamp-2">{product.name}</h3>
                               <p className="text-muted-foreground text-xs md:text-sm mt-1 line-clamp-2">{product.description}</p>
                             </div>
                             <div className="flex items-center gap-2 mt-2">
                               <span className="font-bold text-primary">
-                                ₹{displayPrice.toLocaleString()}
+                                {formatPrice(displayPrice)}
                               </span>
                               {originalPrice && originalPrice > displayPrice && (
-                                <span className="text-sm text-muted-foreground line-through">₹{originalPrice.toLocaleString()}</span>
+                                <span className="text-sm text-muted-foreground line-through">{formatPrice(originalPrice)}</span>
                               )}
                             </div>
                           </div>

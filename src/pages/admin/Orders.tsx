@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,23 @@ export default function AdminOrders() {
     const { data: orders = [], isLoading } = useAllOrders();
     const { mutate: updateStatus, isPending: isUpdatingStatus } = useUpdateOrderStatus();
     const { mutate: markPaid, isPending: isMarkingPaid } = useMarkOrderPaid();
-    const [searchQuery, setSearchQuery] = useState('');
+    // Bug #199: sort + page synced to URL search params so navigating pages
+    // preserves the active sort instead of reverting to the default.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const searchQuery = searchParams.get('q') || '';
+    const sortKey = (searchParams.get('sort') || 'date_desc') as
+        | 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc';
+    const currentPage = Number(searchParams.get('page') || '1');
+    const updateParams = (patch: Record<string, string | null>) => {
+        const next = new URLSearchParams(searchParams);
+        for (const [k, v] of Object.entries(patch)) {
+            if (v === null || v === '') next.delete(k); else next.set(k, v);
+        }
+        setSearchParams(next, { replace: true });
+    };
+    const setSearchQuery = (q: string) => updateParams({ q, page: '1' });
+    const setSortKey = (s: string) => updateParams({ sort: s });
+    void currentPage; void setSortKey;
     const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
     const { toast } = useToast();
 
@@ -90,10 +107,26 @@ export default function AdminOrders() {
         return 'Unknown Customer';
     };
 
-    const filteredOrders = orders.filter((order) =>
-        order._id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getCustomerName(order).toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredOrders = orders
+        .filter((order) =>
+            order._id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            getCustomerName(order).toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        // Bug #199: apply URL-driven sort so it survives page/search changes
+        .slice()
+        .sort((a, b) => {
+            switch (sortKey) {
+                case 'date_asc':
+                    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+                case 'amount_desc':
+                    return b.totalPrice - a.totalPrice;
+                case 'amount_asc':
+                    return a.totalPrice - b.totalPrice;
+                case 'date_desc':
+                default:
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            }
+        });
 
     const getStatusVariant = (status: string) => {
         switch (status) {

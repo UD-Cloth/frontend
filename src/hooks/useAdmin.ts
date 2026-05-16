@@ -14,7 +14,7 @@ export function useAdminStats() {
   return useQuery<DashboardStats>({
     queryKey: ['adminStats'],
     queryFn: async () => {
-      const { data } = await api.get('/admin/stats');
+      const { data } = await api.get<DashboardStats>('/admin/stats');
       return data;
     },
   });
@@ -39,8 +39,8 @@ export function useAllOrders() {
   return useQuery<AdminOrder[]>({
     queryKey: ['adminOrders'],
     queryFn: async () => {
-      const { data } = await api.get('/orders');
-      return data;
+      const { data } = await api.get<AdminOrder[] | { data: AdminOrder[] }>('/orders');
+      return Array.isArray(data) ? data : (data?.data ?? []);
     },
   });
 }
@@ -53,8 +53,13 @@ export function useUpdateOrderToDelivered() {
       const { data } = await api.put(`/orders/${orderId}/deliver`);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['adminOrders'] });
+      // Sprint 6 / BUG-F-096 + BUG-F-097: also invalidate customer-facing queries.
+      queryClient.invalidateQueries({ queryKey: ['allOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['myOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['adminStats'] });
     },
   });
 }

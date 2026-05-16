@@ -12,10 +12,12 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Search, Mail, Smartphone, Bell, Trash2 } from 'lucide-react';
+import { Search, Mail, Smartphone, Bell, Trash2, CheckCheck } from 'lucide-react';
 
 export default function AdminNotifications() {
-    const { notifications, clearHistory } = useNotificationStore();
+    const { notifications, clearHistory, markAllAsRead } = useNotificationStore();
+    // Bug #45: count unread for the action button
+    const unreadCount = notifications.filter((n) => !n.read).length;
     const [searchQuery, setSearchQuery] = useState('');
 
     const filteredNotifications = notifications.filter((notif) =>
@@ -47,12 +49,21 @@ export default function AdminNotifications() {
                         View logs of automated emails and SMS sent to customers.
                     </p>
                 </div>
-                {notifications.length > 0 && (
-                    <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={clearHistory}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Clear History
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    {/* Bug #45: Mark all as read */}
+                    {unreadCount > 0 && (
+                        <Button variant="outline" onClick={markAllAsRead}>
+                            <CheckCheck className="mr-2 h-4 w-4" />
+                            Mark all as read ({unreadCount})
+                        </Button>
+                    )}
+                    {notifications.length > 0 && (
+                        <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={clearHistory}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Clear History
+                        </Button>
+                    )}
+                </div>
             </div>
 
             <div className="flex items-center justify-between">

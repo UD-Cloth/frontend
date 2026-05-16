@@ -1,56 +1,71 @@
 import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Save, Store, CreditCard, Truck, Globe, Loader2 } from "lucide-react";
-import api from '@/lib/api';
+import { z } from "zod";
+import { useSettings, useUpdateSettings, StoreSettings } from '@/hooks/useSettings';
+
+// Bug #33: zod-based contact email validation for Settings
+const contactEmailSchema = z.string().email("Please enter a valid email address");
+
+const DEFAULTS: StoreSettings = {
+    storeName: "URBAN DRAPE",
+    contactEmail: "support@urbandrape.com",
+    storeDescription: "Premium urban clothing brand.",
+    supportPhone: "+91 9876543210",
+    defaultCurrency: "INR",
+    streetAddress: "",
+    city: "Mumbai",
+    stateProvince: "Maharashtra",
+    zipCode: "400001",
+    codEnabled: true,
+    razorpayEnabled: false,
+    razorpayKeyId: "",
+    razorpayKeySecret: "",
+    flatShippingRate: 150,
+    freeShippingThreshold: 2000,
+    taxPercentage: 10,
+    taxIncludedInPrice: true,
+    announcementText: "",
+    isAnnouncementActive: true,
+    isAnnouncementScrolling: true,
+};
 
 export default function AdminSettings() {
     const { toast } = useToast();
-    const [isSaving, setIsSaving] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
-    const [settings, setSettings] = useState({
-        storeName: "Urban Drape",
-        contactEmail: "support@urbandrape.in",
-        storeDescription: "Premium urban clothing brand.",
-        supportPhone: "+91 9876543210",
-        currency: "INR",
-        address: "Mumbai",
-        city: "Mumbai",
-        state: "Maharashtra",
-        zipCode: "400001",
-        shippingRate: 150,
-        freeShippingThreshold: 2000,
-        taxPercentage: 10,
-    });
+    const { data, isLoading } = useSettings();
+    const updateMut = useUpdateSettings();
+    const [settings, setSettings] = useState<StoreSettings>(DEFAULTS);
+    // Bug #33: track validation error for contact email
+    const [emailError, setEmailError] = useState<string | null>(null);
 
     useEffect(() => {
-        loadSettings();
-    }, []);
-
-    const loadSettings = async () => {
-        try {
-            // Bug #150: Load settings from CMS/settings endpoint
-            const { data } = await api.get('/cms/settings');
-            if (data) {
-                setSettings(prev => ({ ...prev, ...data }));
-            }
-        } catch (err) {
-            console.error('Failed to load settings:', err);
-        } finally {
-            setIsLoading(false);
+        if (data) {
+            setSettings({ ...DEFAULTS, ...data });
         }
-    };
+    }, [data]);
 
     const handleSave = async () => {
-        setIsSaving(true);
+        // Bug #33: validate contact email before saving
+        const parsed = contactEmailSchema.safeParse(settings.contactEmail);
+        if (!parsed.success) {
+            const msg = parsed.error.errors[0]?.message || "Invalid email";
+            setEmailError(msg);
+            toast({
+                variant: "destructive",
+                title: "Invalid Contact Email",
+                description: msg,
+            });
+            return;
+        }
+        setEmailError(null);
         try {
-            // Bug #150: Wire settings to backend CMS endpoint
-            await api.put('/cms/settings', settings);
+            await updateMut.mutateAsync(settings);
             toast({
                 title: "Settings Saved",
                 description: "Your store configurations have been successfully updated.",
@@ -59,10 +74,8 @@ export default function AdminSettings() {
             toast({
                 variant: "destructive",
                 title: "Failed to Save",
-                description: err.response?.data?.message || "Could not save settings",
+                description: err?.response?.data?.message || "Could not save settings",
             });
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -83,9 +96,9 @@ export default function AdminSettings() {
                         Manage website configuration, tax rules, shipping, and your admin profile.
                     </p>
                 </div>
-                <Button onClick={handleSave} disabled={isSaving} className="gap-2">
-                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                    {isSaving ? "Saving..." : "Save Changes"}
+                <Button onClick={handleSave} disabled={updateMut.isPending} className="gap-2">
+                    {updateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {updateMut.isPending ? "Saving..." : "Save Changes"}
                 </Button>
             </div>
 
@@ -111,7 +124,19 @@ export default function AdminSettings() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Contact Email</Label>
-                                    <Input value={settings.contactEmail} onChange={(e) => setSettings({...settings, contactEmail: e.target.value})} type="email" />
+                                    <Input
+                                        value={settings.contactEmail}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setSettings({ ...settings, contactEmail: v });
+                                            // Bug #33: live-validate
+                                            const r = contactEmailSchema.safeParse(v);
+                                            setEmailError(r.success ? null : (r.error.errors[0]?.message || "Invalid email"));
+                                        }}
+                                        type="email"
+                                        aria-invalid={!!emailError}
+                                    />
+                                    {emailError && <p className="text-sm text-destructive">{emailError}</p>}
                                 </div>
                             </div>
                             <div className="space-y-2">
@@ -125,17 +150,43 @@ export default function AdminSettings() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <Label>Support Phone Number</Label>
-                                    <Input value={settings.supportPhone} onChange={(e) => setSettings({...settings, supportPhone: e.target.value})} />
+                                    {/* Bug #34: phone accepts only digits, +, -, spaces */}
+                                    <Input
+                                        value={settings.supportPhone}
+                                        type="tel"
+                                        inputMode="tel"
+                                        onKeyPress={(e) => {
+                                            if (!/[\d+\-\s]/.test(e.key)) e.preventDefault();
+                                        }}
+                                        onChange={(e) => {
+                                            const cleaned = e.target.value.replace(/[^\d+\-\s]/g, '');
+                                            setSettings({ ...settings, supportPhone: cleaned });
+                                        }}
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Default Currency</Label>
-                                    <select value={settings.currency} onChange={(e) => setSettings({...settings, currency: e.target.value})} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                                    <select value={settings.defaultCurrency} onChange={(e) => setSettings({...settings, defaultCurrency: e.target.value})} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                                         <option value="INR">INR (₹)</option>
                                         <option value="USD">USD ($)</option>
                                         <option value="EUR">EUR (€)</option>
                                         <option value="GBP">GBP (£)</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Announcement Bar Text</Label>
+                                <Input value={settings.announcementText} onChange={(e) => setSettings({...settings, announcementText: e.target.value})} />
+                            </div>
+                            <div className="flex items-center gap-6">
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" checked={settings.isAnnouncementActive} onChange={(e) => setSettings({...settings, isAnnouncementActive: e.target.checked})} />
+                                    Announcement Active
+                                </label>
+                                <label className="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" checked={settings.isAnnouncementScrolling} onChange={(e) => setSettings({...settings, isAnnouncementScrolling: e.target.checked})} />
+                                    Scroll Animation
+                                </label>
                             </div>
                         </CardContent>
                     </Card>
@@ -150,7 +201,7 @@ export default function AdminSettings() {
                         <CardContent className="space-y-6">
                             <div className="space-y-2">
                                 <Label>Street Address</Label>
-                                <Input value={settings.address} onChange={(e) => setSettings({...settings, address: e.target.value})} />
+                                <Input value={settings.streetAddress} onChange={(e) => setSettings({...settings, streetAddress: e.target.value})} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="space-y-2">
@@ -159,7 +210,7 @@ export default function AdminSettings() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label>State / Province</Label>
-                                    <Input value={settings.state} onChange={(e) => setSettings({...settings, state: e.target.value})} />
+                                    <Input value={settings.stateProvince} onChange={(e) => setSettings({...settings, stateProvince: e.target.value})} />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>ZIP / Postal Code</Label>
@@ -183,7 +234,7 @@ export default function AdminSettings() {
                                     <p className="text-sm text-slate-500">Allow customers to pay upon receiving the order.</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                    <input type="checkbox" id="cod-active" className="rounded text-primary focus:ring-primary w-5 h-5" defaultChecked />
+                                    <input type="checkbox" id="cod-active" checked={settings.codEnabled} onChange={(e) => setSettings({...settings, codEnabled: e.target.checked})} className="rounded text-primary focus:ring-primary w-5 h-5" />
                                     <label htmlFor="cod-active" className="text-sm font-medium cursor-pointer">Enabled</label>
                                 </div>
                             </div>
@@ -194,7 +245,7 @@ export default function AdminSettings() {
                                     <p className="text-sm text-slate-500">Accept credit cards, UPI, and netbanking securely.</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                    <input type="checkbox" id="razorpay-active" className="rounded text-primary focus:ring-primary w-5 h-5" />
+                                    <input type="checkbox" id="razorpay-active" checked={settings.razorpayEnabled} onChange={(e) => setSettings({...settings, razorpayEnabled: e.target.checked})} className="rounded text-primary focus:ring-primary w-5 h-5" />
                                     <label htmlFor="razorpay-active" className="text-sm font-medium cursor-pointer">Enabled</label>
                                 </div>
                             </div>
@@ -203,11 +254,11 @@ export default function AdminSettings() {
                                 <h4 className="font-medium text-sm">Razorpay API Credentials</h4>
                                 <div className="space-y-2">
                                     <Label>Key ID</Label>
-                                    <Input type="password" placeholder="rzp_test_..." />
+                                    <Input type="password" placeholder="rzp_test_..." value={settings.razorpayKeyId} onChange={(e) => setSettings({...settings, razorpayKeyId: e.target.value})} />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Key Secret</Label>
-                                    <Input type="password" placeholder="••••••••••••••••" />
+                                    <Input type="password" placeholder="••••••••••••••••" value={settings.razorpayKeySecret} onChange={(e) => setSettings({...settings, razorpayKeySecret: e.target.value})} />
                                 </div>
                             </div>
                         </CardContent>
@@ -226,7 +277,7 @@ export default function AdminSettings() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="space-y-2">
                                         <Label>Flat Shipping Rate (₹)</Label>
-                                        <Input type="number" value={settings.shippingRate} onChange={(e) => setSettings({...settings, shippingRate: Number(e.target.value)})} />
+                                        <Input type="number" value={settings.flatShippingRate} onChange={(e) => setSettings({...settings, flatShippingRate: Number(e.target.value)})} />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Free Shipping Threshold (₹)</Label>
@@ -244,7 +295,7 @@ export default function AdminSettings() {
                                         <Input type="number" value={settings.taxPercentage} onChange={(e) => setSettings({...settings, taxPercentage: Number(e.target.value)})} />
                                     </div>
                                     <div className="flex items-center space-x-2 mt-8">
-                                        <input type="checkbox" id="tax-included" className="rounded text-primary focus:ring-primary w-4 h-4" defaultChecked />
+                                        <input type="checkbox" id="tax-included" checked={settings.taxIncludedInPrice} onChange={(e) => setSettings({...settings, taxIncludedInPrice: e.target.checked})} className="rounded text-primary focus:ring-primary w-4 h-4" />
                                         <label htmlFor="tax-included" className="text-sm font-medium cursor-pointer">Prices entered include tax</label>
                                     </div>
                                 </div>

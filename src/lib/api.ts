@@ -1,3 +1,5 @@
+import { toast } from 'sonner';
+
 const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 // Ensure BASE_URL cleanly ends with /api, avoiding double slashes or missing /api.
 const cleanEnvUrl = envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
@@ -26,12 +28,33 @@ const handleResponse = async (response: Response) => {
   if (!response.ok) {
     // Bug #29/#30: Auto-logout on 401 (expired/invalid JWT) to prevent broken UI state
     if (response.status === 401) {
+      // Bug #111: notify user before redirect that their session expired.
+      // Only fire when there was actually an authenticated session — avoids
+      // spurious toasts on login-form 401s for bad credentials.
+      const hadSession = !!localStorage.getItem('userInfo');
+      if (hadSession) {
+        try {
+          toast.error('Session expired — please sign in again.');
+        } catch { /* ignore */ }
+      }
       localStorage.removeItem('userInfo');
       localStorage.removeItem('urban-drape-cart');
       localStorage.removeItem('wishlist');
-      // Redirect to auth only if not already there and not on admin pages
-      if (!window.location.pathname.startsWith('/auth') && !window.location.pathname.startsWith('/admin')) {
-        window.location.href = '/auth?returnUrl=' + encodeURIComponent(window.location.pathname);
+      // Sprint 5 / BUG-F-061: also clear the persisted admin auth store on 401.
+      // Previously /admin/* would keep `isAuthenticated: true` in zustand even
+      // though the JWT was gone, leaving a stale "logged in" admin shell.
+      try {
+        localStorage.removeItem('urban-drape-admin-auth');
+      } catch { /* ignore */ }
+      // Redirect to auth only if not already there. For admin pages, send to
+      // /admin/login instead of the customer auth screen.
+      const path = window.location.pathname;
+      if (path.startsWith('/admin')) {
+        if (!path.startsWith('/admin/login')) {
+          window.location.href = '/admin/login';
+        }
+      } else if (!path.startsWith('/auth')) {
+        window.location.href = '/auth?returnUrl=' + encodeURIComponent(path);
       }
     }
     // Bug #181, #182: Throw error with response structure compatible with axios error handling
@@ -69,6 +92,16 @@ const api = {
   put: async <T>(url: string, body?: any) => {
     const response = await fetch(`${BASE_URL}${url}`, {
       method: 'PUT',
+      headers: getHeaders(),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    return handleResponse(response) as Promise<{ data: T }>;
+  },
+  // Sprint 7 / BUG-F-057: PATCH method so callers don't have to hand-roll
+  // fetch + JWT headers when the backend route is PATCH (e.g. newsletter toggle).
+  patch: async <T>(url: string, body?: any) => {
+    const response = await fetch(`${BASE_URL}${url}`, {
+      method: 'PATCH',
       headers: getHeaders(),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });

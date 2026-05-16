@@ -38,6 +38,9 @@ export interface Order {
     paymentStatus: PaymentStatus;
     orderStatus: OrderStatus;
     createdAt: string;
+    /** Optional fulfillment metadata; populated when admin adds tracking. */
+    courierService?: string;
+    trackingNumber?: string;
 }
 
 interface OrderStore {

@@ -45,14 +45,28 @@ export const useRegister = () => {
   });
 };
 
+export interface ProfileResponse {
+  profile: User & {
+    address?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    // Sprint 7 / BUG-F-053: surface the fields the UI actually reads, so
+    // call sites can drop the `as any` casts.
+    emailVerified?: boolean;
+    createdAt?: string;
+  };
+  orders: any[];
+}
+
 export const useProfile = () => {
-  return useQuery({
+  return useQuery<ProfileResponse>({
     queryKey: ['profile'],
     queryFn: async () => {
-      const { data } = await api.get('/auth/dashboard');
+      const { data } = await api.get<ProfileResponse>('/auth/dashboard');
       return data;
     },
-    staleTime: 5 * 60 * 1000, 
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -69,27 +83,65 @@ export const useUpdateProfile = () => {
       state?: string;
       postalCode?: string;
     }) => {
-      const { data } = await api.put('/auth/profile', profileData);
+      const { data } = await api.put<Record<string, unknown>>('/auth/profile', profileData);
       return data;
     },
     onSuccess: (data) => {
-      // Update local storage to keep it in sync
-      const userInfoStr = localStorage.getItem('userInfo');
-      if (userInfoStr) {
-        try {
-            const userInfo = JSON.parse(userInfoStr);
-            if (typeof userInfo === 'object' && userInfo !== null) {
-              localStorage.setItem('userInfo', JSON.stringify({ ...userInfo, ...data }));
-            } else {
-              localStorage.setItem('userInfo', JSON.stringify(data));
-            }
-        } catch {
-            localStorage.setItem('userInfo', JSON.stringify(data));
+      // Sprint 4 / BUG-F-059: NEVER replace userInfo wholesale — backend
+      // PUT /auth/profile does not echo the `token` field, so a wholesale
+      // replace silently signs the user out on the very next API call.
+      // Always merge into existing userInfo and preserve the token.
+      try {
+        const userInfoStr = localStorage.getItem('userInfo');
+        const userInfo = userInfoStr ? JSON.parse(userInfoStr) : null;
+        if (userInfo && typeof userInfo === 'object' && data && typeof data === 'object') {
+          const merged = { ...userInfo, ...data, token: userInfo.token };
+          localStorage.setItem('userInfo', JSON.stringify(merged));
         }
+        // If we can't parse userInfo we deliberately do NOTHING — better to
+        // leave the existing entry alone than wipe the token.
+      } catch {
+        // ignore — preserve whatever was there
       }
       
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['user'] });
+    },
+  });
+};
+
+export const useResendVerification = () => {
+  return useMutation({
+    mutationFn: async (email: string) => {
+      const { data } = await api.post('/auth/resend-verification', { email });
+      return data;
+    },
+  });
+};
+
+export const useVerifyEmail = () => {
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const { data } = await api.post('/auth/verify-email', { token });
+      return data;
+    },
+  });
+};
+
+export const useForgotPassword = () => {
+  return useMutation({
+    mutationFn: async (email: string) => {
+      const { data } = await api.post('/auth/forgot-password', { email });
+      return data;
+    },
+  });
+};
+
+export const useResetPassword = () => {
+  return useMutation({
+    mutationFn: async ({ token, newPassword }: { token: string; newPassword: string }) => {
+      const { data } = await api.post('/auth/reset-password', { token, newPassword });
+      return data;
     },
   });
 };

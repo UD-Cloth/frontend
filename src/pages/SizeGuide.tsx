@@ -1,9 +1,11 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import SEO from "@/components/SEO";
 
 const SizeGuide = () => (
   <div className="min-h-screen flex flex-col bg-background">
+    <SEO title="Size guide" description="Find your fit with the Urban Drape size guide." />
     <Header />
     <main className="flex-1 container px-4 md:px-8 py-10 md:py-16 max-w-3xl">
       <h1 className="text-3xl md:text-4xl font-bold mb-6">Size Guide</h1>

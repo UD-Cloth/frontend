@@ -1,146 +1,137 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Star, Loader2 } from "lucide-react";
+import { Star, MessageSquarePlus, Loader2 } from "lucide-react";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { useProductReviews, useAddReview } from "@/hooks/useProducts";
-import { useAuthContext } from "@/context/AuthContext";
-import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useProductReviews } from "@/hooks/useProducts";
+import { ReviewForm } from "./ReviewForm";
 import { cn } from "@/lib/utils";
 
-// Bug #70/#71: Show product reviews and allow authenticated buyers to submit a review
-export const ProductReviews = ({ productId }: { productId: string }) => {
-  const { data: reviews = [], isLoading } = useProductReviews(productId);
-  const addReview = useAddReview(productId);
-  const { user } = useAuthContext();
-  const { toast } = useToast();
+interface ProductReviewsProps {
+  productId: string;
+}
 
-  const [rating, setRating] = useState(0);
-  const [hoverRating, setHoverRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [showForm, setShowForm] = useState(false);
+// Sprint 5 / BUG-F-037: read reviews from the backend (`useProductReviews`)
+// instead of the demo `useReviewStore`. Reviews submitted via ReviewForm
+// (also rewired) now actually persist and show up here.
+export const ProductReviews = ({ productId }: ProductReviewsProps) => {
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const { data: reviews = [], isLoading, error } = useProductReviews(productId);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rating) {
-      toast({ variant: "destructive", title: "Rating required", description: "Please select a star rating." });
-      return;
-    }
-    if (!comment.trim()) {
-      toast({ variant: "destructive", title: "Comment required", description: "Please write a brief review." });
-      return;
-    }
-    try {
-      await addReview.mutateAsync({ rating, comment });
-      toast({ title: "Review Submitted", description: "Thank you for your review!" });
-      setRating(0);
-      setComment("");
-      setShowForm(false);
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Review Failed", description: err.message || "Could not submit review." });
-    }
+  const averageRating = reviews.length > 0
+    ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
+    : "0.0";
+
+  const renderStars = (rating: number) => (
+    <div className="flex items-center">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          className={cn(
+            "h-4 w-4",
+            rating >= star
+              ? "fill-amber-400 text-amber-400"
+              : "fill-muted text-muted-foreground"
+          )}
+        />
+      ))}
+    </div>
+  );
+
+  const reviewerName = (r: any): string => {
+    const u = r?.user;
+    if (!u) return "Anonymous";
+    return [u.firstName, u.lastName].filter(Boolean).join(" ") || "Anonymous";
   };
 
   return (
-    <section className="border-t pt-8 mt-8">
-      <div className="container px-4 md:px-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">Customer Reviews ({reviews.length})</h2>
-          {user && !showForm && (
-            <Button variant="outline" size="sm" onClick={() => setShowForm(true)}>
-              Write a Review
-            </Button>
-          )}
+    <div className="space-y-8 animate-fade-in py-8">
+      {/* Header & Stats */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-border border-dashed">
+        <div className="space-y-2">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">Customer Reviews</h2>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-secondary px-3 py-1 rounded-full">
+              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+              <span className="font-bold text-foreground">{averageRating}</span>
+              <span className="text-xs text-muted-foreground">out of 5</span>
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">
+              Based on {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
+            </p>
+          </div>
         </div>
 
-        {/* Review Form */}
-        {showForm && user && (
-          <form onSubmit={handleSubmit} className="mb-8 p-5 border rounded-xl bg-muted/30 space-y-4">
-            <h3 className="font-semibold">Your Review</h3>
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Rating</p>
-              <div className="flex gap-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onMouseEnter={() => setHoverRating(star)}
-                    onMouseLeave={() => setHoverRating(0)}
-                    onClick={() => setRating(star)}
-                  >
-                    <Star
-                      className={cn(
-                        "h-7 w-7 transition-colors",
-                        (hoverRating || rating) >= star
-                          ? "fill-amber-400 text-amber-400"
-                          : "text-muted-foreground"
-                      )}
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Comment</p>
-              <Textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Share your experience with this product..."
-                rows={4}
-              />
-            </div>
-            <div className="flex gap-3">
-              <Button type="submit" disabled={addReview.isPending}>
-                {addReview.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Submit Review
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
-            </div>
-          </form>
-        )}
+        <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
+          <DialogTrigger asChild>
+            <Button size="lg" className="font-bold rounded-xl shadow-md min-w-[200px]">
+              <MessageSquarePlus className="mr-2 h-5 w-5" />
+              Write a Review
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[500px] p-6 sm:rounded-2xl">
+            <DialogHeader className="mb-4">
+              <DialogTitle className="text-2xl">Write a Review</DialogTitle>
+            </DialogHeader>
+            <ReviewForm
+              productId={productId}
+              onSuccess={() => setIsReviewModalOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      </div>
 
-        {/* Reviews List */}
+      {/* Review List */}
+      <div className="space-y-6">
         {isLoading ? (
-          <div className="flex justify-center py-8">
+          <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        ) : error ? (
+          <div className="text-center py-12 text-sm text-destructive">
+            Could not load reviews right now. Please refresh.
+          </div>
         ) : reviews.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">No reviews yet. Be the first to review this product!</p>
+          <div className="text-center py-12 px-4 bg-secondary/30 rounded-2xl border border-dashed border-border">
+            <h3 className="text-lg font-bold mb-2">No reviews yet</h3>
+            <p className="text-muted-foreground mb-6">Be the first to share your thoughts on this product!</p>
+            <Button variant="outline" onClick={() => setIsReviewModalOpen(true)}>
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              Write the first review
+            </Button>
+          </div>
         ) : (
-          <div className="space-y-5">
+          <div className="grid gap-6 md:grid-cols-2">
             {reviews.map((review: any) => (
-              <div key={review._id} className="border-b pb-5 last:border-0">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex gap-0.5">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Star
-                        key={star}
-                        className={cn(
-                          "h-4 w-4",
-                          review.rating >= star ? "fill-amber-400 text-amber-400" : "text-muted-foreground"
-                        )}
-                      />
-                    ))}
+              <div
+                key={review._id}
+                className="bg-card border border-border/60 p-6 rounded-2xl shadow-sm space-y-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="font-semibold text-foreground">{reviewerName(review)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {review.createdAt ? format(new Date(review.createdAt), 'MMMM d, yyyy') : ''}
+                    </p>
                   </div>
-                  <span className="font-semibold text-sm">
-                    {review.user?.firstName} {review.user?.lastName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(review.createdAt).toLocaleDateString()}
-                  </span>
+                  <div className="bg-secondary/50 p-1.5 rounded-lg">
+                    {renderStars(review.rating)}
+                  </div>
                 </div>
-                <p className="text-sm text-foreground leading-relaxed">{review.comment}</p>
+                <p className="text-sm text-foreground/90 leading-relaxed">
+                  {review.comment}
+                </p>
               </div>
             ))}
           </div>
         )}
-
-        {!user && (
-          <p className="text-sm text-muted-foreground mt-4 text-center">
-            <Link to="/auth?returnUrl=/product/" className="underline hover:text-foreground">Sign in</Link> to leave a review.
-          </p>
-        )}
       </div>
-    </section>
+    </div>
   );
 };

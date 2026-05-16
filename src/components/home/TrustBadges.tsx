@@ -9,7 +9,7 @@ const badges = [
   {
     icon: RotateCcw,
     title: "Easy Returns",
-    description: "15-day return policy",
+    description: "7-day return policy",
   },
   {
     icon: CreditCard,

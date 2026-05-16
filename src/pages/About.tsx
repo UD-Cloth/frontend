@@ -1,93 +1,83 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { CheckCircle2 } from "lucide-react";
+import SEO from "@/components/SEO";
 
 const About = () => (
   <div className="min-h-screen flex flex-col bg-background">
+    <SEO title="About us" description="The Urban Drape story — modern apparel made in India." />
     <Header />
-    <main className="flex-1">
-      <div className="bg-foreground text-background py-20 px-4 text-center">
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">About Urban Drape</h1>
-        <p className="text-background/70 text-lg max-w-2xl mx-auto">
-          Premium menswear crafted for the modern Indian man — where style meets substance.
+    
+    {/* Hero Section */}
+    <div className="relative bg-muted py-24 md:py-32 flex items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 z-0">
+        <img 
+          src="https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?q=80&w=2070&auto=format&fit=crop" 
+          alt="Premium Menswear" 
+          className="w-full h-full object-cover opacity-20 object-top"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
+      </div>
+      <div className="relative z-10 container px-4 text-center max-w-3xl">
+        <h1 className="text-4xl md:text-6xl font-bold mb-6 tracking-tight">Redefining Premium Menswear</h1>
+        <p className="text-lg md:text-xl text-muted-foreground">
+          Elevating everyday essentials with uncompromising quality and timeless design.
         </p>
       </div>
+    </div>
 
-      <div className="container px-4 md:px-8 py-12 md:py-16 max-w-4xl mx-auto">
-        <section className="mb-14">
-          <h2 className="text-2xl md:text-3xl font-bold mb-4">Our Story</h2>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            Urban Drape was born out of a simple frustration: finding premium-quality menswear in India that didn't cost a fortune. Our founders — a group of fashion enthusiasts and technology entrepreneurs from Mumbai — believed that every man deserves to dress well without compromise.
-          </p>
-          <p className="text-muted-foreground leading-relaxed mb-4">
-            What started as a small curated collection of T-shirts and shirts has grown into a full menswear brand offering everything from everyday essentials to statement pieces. We work directly with skilled artisans and fabric mills across India to ensure each garment meets our exacting standards.
-          </p>
-          <p className="text-muted-foreground leading-relaxed">
-            Today, Urban Drape serves customers across India with a commitment to quality, sustainability, and genuine style. We're not just selling clothes — we're building a community of men who value thoughtful dressing.
-          </p>
-        </section>
-
-        <section className="mb-14">
-          <h2 className="text-2xl md:text-3xl font-bold mb-8">Our Values</h2>
-          <div className="grid sm:grid-cols-3 gap-6">
-            <div className="bg-secondary/40 rounded-xl p-6">
-              <div className="text-3xl mb-3">🎯</div>
-              <h3 className="font-semibold mb-2">Quality First</h3>
-              <p className="text-sm text-muted-foreground">
-                We source only the finest fabrics and use precise manufacturing techniques. Every stitch is inspected before it reaches you.
-              </p>
-            </div>
-            <div className="bg-secondary/40 rounded-xl p-6">
-              <div className="text-3xl mb-3">🌿</div>
-              <h3 className="font-semibold mb-2">Responsible Fashion</h3>
-              <p className="text-sm text-muted-foreground">
-                We're committed to reducing our environmental footprint — from eco-friendly packaging to responsible dye processes in our supply chain.
-              </p>
-            </div>
-            <div className="bg-secondary/40 rounded-xl p-6">
-              <div className="text-3xl mb-3">🤝</div>
-              <h3 className="font-semibold mb-2">Customer Centricity</h3>
-              <p className="text-sm text-muted-foreground">
-                Our customers are at the heart of everything. From easy returns to 24/7 support, we make shopping stress-free.
-              </p>
-            </div>
+    <main className="flex-1 container px-4 md:px-8 py-16 md:py-24">
+      {/* Brand Story */}
+      <div className="grid md:grid-cols-2 gap-12 lg:gap-20 items-center max-w-6xl mx-auto mb-20">
+        <div className="relative h-[500px] rounded-2xl overflow-hidden shadow-xl lg:order-2">
+          <img 
+            src="https://images.unsplash.com/photo-1516257984-b1b4d707412e?q=80&w=987&auto=format&fit=crop" 
+            alt="Craftsmanship" 
+            className="w-full h-full object-cover"
+          />
+        </div>
+        <div className="space-y-6 lg:order-1">
+          <h2 className="text-3xl font-bold tracking-tight">Our Story</h2>
+          <div className="space-y-4 text-muted-foreground leading-relaxed">
+            <p>URBAN DRAPE was born from a simple belief: premium menswear shouldn't be complicated or inaccessible. We noticed a gap between fast fashion and luxury designer labels—a space where men wanted exceptionally crafted, timeless pieces without the designer markup.</p>
+            <p>Founded by a team of fashion industry veterans, we set out to build a brand that focuses on what truly matters: superior fabrics, perfect fits, and meticulous attention to detail.</p>
+            <p>Every piece in our collection is rigorously tested for comfort, durability, and style. We partner with some of the finest mills and ethical factories around the world to bring our vision to life.</p>
           </div>
-        </section>
+        </div>
+      </div>
 
-        <section className="mb-14">
-          <h2 className="text-2xl md:text-3xl font-bold mb-6">Why Choose Urban Drape?</h2>
-          <ul className="space-y-3 text-muted-foreground">
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold mt-0.5">✓</span>
-              <span><strong className="text-foreground">Direct-to-consumer pricing</strong> — No middlemen. Premium quality at fair prices.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold mt-0.5">✓</span>
-              <span><strong className="text-foreground">Free shipping above ₹2,000</strong> — Delivered across India in 3–7 business days.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold mt-0.5">✓</span>
-              <span><strong className="text-foreground">Easy 30-day returns</strong> — Not happy? Return it, no questions asked.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold mt-0.5">✓</span>
-              <span><strong className="text-foreground">Size-inclusive range</strong> — From S to 3XL, we cater to every body type.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-primary font-bold mt-0.5">✓</span>
-              <span><strong className="text-foreground">Dedicated support</strong> — Reach us via email, phone, or chat — Mon to Sat, 9AM–9PM IST.</span>
-            </li>
-          </ul>
-        </section>
+      {/* Philosophy Pillars */}
+      <div className="max-w-6xl mx-auto bg-secondary/30 rounded-3xl p-8 md:p-12 border border-border/50">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold mb-4">Our Philosophy</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">The principles that guide everything we create.</p>
+        </div>
+        
+        <div className="grid sm:grid-cols-3 gap-8">
+          <div className="space-y-3">
+            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="text-primary w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-semibold">Uncompromising Quality</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">We source the finest materials globally, from long-staple cottons to premium wools, ensuring every garment stands the test of time.</p>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="text-primary w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-semibold">Timeless Design</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">We ignore fleeting trends in favor of classic silhouettes. Our clothes are designed to look as good today as they will in ten years.</p>
+          </div>
 
-        <section className="text-center bg-secondary/40 rounded-xl p-8">
-          <h2 className="text-2xl font-bold mb-3">Ready to Upgrade Your Wardrobe?</h2>
-          <p className="text-muted-foreground mb-6">Explore our latest collections — from everyday essentials to statement pieces.</p>
-          <Button asChild size="lg">
-            <Link to="/">Shop Now</Link>
-          </Button>
-        </section>
+          <div className="space-y-3">
+            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="text-primary w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-semibold">Ethical Production</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">We partner exclusively with factories that provide fair wages, safe working conditions, and share our commitment to sustainability.</p>
+          </div>
+        </div>
       </div>
     </main>
     <Footer />

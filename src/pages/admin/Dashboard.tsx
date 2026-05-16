@@ -211,6 +211,8 @@ export default function AdminDashboard() {
                                         />
                                         <Tooltip
                                             cursor={{ fill: 'rgba(0,0,0,0.1)' }}
+                                            // Bug #31: Recharts tooltip z-index — sit above sticky admin header
+                                            wrapperStyle={{ zIndex: 50 }}
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                             formatter={(value) => [`₹${value}`, "Revenue"]}
                                         />
@@ -242,6 +244,8 @@ export default function AdminDashboard() {
                                             axisLine={false}
                                         />
                                         <Tooltip
+                                            // Bug #31: Recharts tooltip z-index — sit above sticky admin header
+                                            wrapperStyle={{ zIndex: 50 }}
                                             contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                         />
                                         <Line type="monotone" dataKey="new" stroke="hsl(var(--primary))" strokeWidth={2} activeDot={{ r: 8 }} />

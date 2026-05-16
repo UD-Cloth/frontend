@@ -18,10 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useCartStore } from "@/stores/cartStore";
 import { useAuthContext } from "@/context/AuthContext";
+// Bug #29: read wishlist context so we can clear purchased items post-order
+import { useWishlist } from "@/context/WishlistContext";
 import { useCreateOrder } from "@/hooks/useOrders";
 import { useToast } from "@/components/ui/use-toast";
+import { useValidatePromoCode, useLogAbandonedCart } from "@/hooks/useMarketing";
 import { ShieldCheck, ArrowLeft, CheckCircle2, MapPin, User, Truck, CreditCard, Plus, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatPrice } from "@/lib/utils";
+import SEO from "@/components/SEO";
 import "react-phone-number-input/style.css";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 
@@ -36,7 +40,9 @@ const checkoutSchema = z.object({
     // Bug #102: Indian ZIP codes are exactly 6 digits
     zipCode: z.string().regex(/^\d{6}$/, "PIN code must be exactly 6 digits"),
     saveAddress: z.boolean().default(false),
-    paymentMethod: z.enum(['cod', 'online']),
+    // Sprint 1 / BUG-F-044: Only 'cod' is currently accepted. 'online' option in
+    // the UI is disabled until a real payment gateway is wired up.
+    paymentMethod: z.literal('cod'),
 });
 
 type CheckoutValues = z.infer<typeof checkoutSchema>;
@@ -47,23 +53,19 @@ export default function Checkout() {
     const { items, clearCart } = useCartStore();
     const createOrder = useCreateOrder();
     const { user } = useAuthContext();
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    // Bug #29: pull wishlist state so we can prune just-purchased items.
+    const { items: wishlistItems, removeFromWishlist } = useWishlist();
+    // Bug #167: dropped redundant `isSubmitting` — createOrder.isPending is the
+    // single source of truth for the in-flight order request.
+    const isSubmitting = createOrder.isPending;
     const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     const [emailSuggestions, setEmailSuggestions] = useState<string[]>([]);
-    // Bug #172: Promo/coupon codes at checkout
+    // Bug #172: Promo/coupon codes at checkout (now backed by /promotions/validate)
     const [couponCode, setCouponCode] = useState("");
     const [discountAmount, setDiscountAmount] = useState(0);
     const [appliedCoupon, setAppliedCoupon] = useState("");
-
-    // Simple coupon validation (in production, this would be an API call)
-    const validateCoupon = (code: string) => {
-        const coupons: Record<string, number> = {
-            "SAVE10": 0.10,  // 10% off
-            "SAVE20": 0.20,  // 20% off
-            "WELCOME": 0.05, // 5% off
-        };
-        return coupons[code.toUpperCase()] || 0;
-    };
+    const validatePromo = useValidatePromoCode();
+    const logAbandonedCart = useLogAbandonedCart();
 
     // Try to load saved address from localStorage
     const loadSavedData = () => {
@@ -98,6 +100,41 @@ export default function Checkout() {
     const watchZip = form.watch("zipCode");
     const watchEmail = form.watch("email");
 
+    // Log abandoned cart on mount (fire-and-forget). If the user completes the
+    // order, the record represents the cart-at-checkout-entry; backend dedupes
+    // by sessionId. Runs once per checkout visit.
+    useEffect(() => {
+        if (!items || items.length === 0) return;
+        try {
+            let sessionId = localStorage.getItem('urban-drape-session-id');
+            if (!sessionId) {
+                sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+                localStorage.setItem('urban-drape-session-id', sessionId);
+            }
+            const totalValue = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
+            logAbandonedCart.mutate({
+                sessionId,
+                items: items.map((it) => ({
+                    productId: it.productId,
+                    name: it.name,
+                    image: it.image,
+                    price: it.price,
+                    quantity: it.quantity,
+                    size: it.size,
+                    color: it.color,
+                })),
+                totalValue,
+                email: user?.email || form.getValues('email') || undefined,
+                checkoutStarted: true,
+                pageAbandoned: '/checkout',
+            });
+        } catch (err) {
+            // fire-and-forget; ignore failures
+            console.warn('Abandoned-cart log failed', err);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Smart Email Suggestion Logic
     useEffect(() => {
         if (!watchEmail || !watchEmail.includes('@')) {
@@ -116,38 +153,49 @@ export default function Checkout() {
         }
     }, [watchEmail]);
 
-    // Smart Address Autofill via Postal Code API
+    // Sprint 6 / BUG-F-040: cancel in-flight pincode lookups when the user
+    // edits the field, and defensively guard against unexpected response shapes.
     useEffect(() => {
-        if (watchZip && watchZip.length === 6) {
-            const fetchLocation = async () => {
-                setIsFetchingLocation(true);
-                try {
-                    const res = await fetch(`https://api.postalpincode.in/pincode/${watchZip}`);
-                    const data = await res.json();
-                    if (data[0].Status === 'Success' && data[0].PostOffice && data[0].PostOffice.length > 0) {
-                        const postOffice = data[0].PostOffice[0];
-                        const city = postOffice.District || postOffice.Block || postOffice.Name;
-                        const state = postOffice.State;
-                        
-                        if (city) form.setValue('city', city, { shouldValidate: true });
-                        if (state) form.setValue('state', state, { shouldValidate: true });
+        if (!watchZip || watchZip.length !== 6) return;
 
+        const controller = new AbortController();
+        const fetchLocation = async () => {
+            setIsFetchingLocation(true);
+            try {
+                const res = await fetch(`https://api.postalpincode.in/pincode/${watchZip}`, {
+                    signal: controller.signal,
+                });
+                const data = await res.json().catch(() => null);
+                const first = Array.isArray(data) ? data[0] : null;
+                const postOffices = first?.PostOffice;
+                if (first?.Status === 'Success' && Array.isArray(postOffices) && postOffices.length > 0) {
+                    const postOffice = postOffices[0] || {};
+                    const city = postOffice.District || postOffice.Block || postOffice.Name;
+                    const state = postOffice.State;
+
+                    if (city) form.setValue('city', String(city), { shouldValidate: true });
+                    if (state) form.setValue('state', String(state), { shouldValidate: true });
+
+                    if (city || state) {
                         toast({
-                            title: "Location Auto-filled",
-                            description: `Found ${city}, ${state}`,
+                            title: 'Location Auto-filled',
+                            description: `Found ${city || ''}${city && state ? ', ' : ''}${state || ''}`,
                             duration: 2000,
                         });
                     }
-                } catch (error) {
-                    // Bug #141: Don't silently fail - just log, user can enter manually
-                    console.error("Postal code lookup failed", error);
-                    // No toast to avoid alarming user - they can manually fill fields
-                } finally {
+                }
+            } catch (error: any) {
+                if (error?.name === 'AbortError') return; // user kept typing
+                console.error('Postal code lookup failed', error);
+            } finally {
+                if (!controller.signal.aborted) {
                     setIsFetchingLocation(false);
                 }
-            };
-            fetchLocation();
-        }
+            }
+        };
+
+        fetchLocation();
+        return () => controller.abort();
     }, [watchZip, form, toast]);
 
     const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -159,9 +207,10 @@ export default function Checkout() {
     // Bug #40: Threshold is ₹2000 — ProductInfo delivery text was showing ₹999 (fixed there)
     const shipping = totalPrice > 2000 ? 0 : 150;
     const subtotalBeforeDiscount = totalPrice + tax + shipping;
-    const grandTotal = subtotalBeforeDiscount - discountAmount;
+    // Bug #10: never let a fixed-amount coupon take the total negative.
+    const grandTotal = Math.max(0, subtotalBeforeDiscount - discountAmount);
 
-    const applyCoupon = () => {
+    const applyCoupon = async () => {
         if (!couponCode.trim()) {
             toast({
                 variant: "destructive",
@@ -170,38 +219,43 @@ export default function Checkout() {
             });
             return;
         }
-        const discountPercent = validateCoupon(couponCode);
-        if (discountPercent === 0) {
+        try {
+            const result = await validatePromo.mutateAsync({
+                code: couponCode.trim().toUpperCase(),
+                cartTotal: subtotalBeforeDiscount,
+            });
+            if (!result.valid) {
+                toast({
+                    variant: "destructive",
+                    title: "Invalid Coupon",
+                    description: result.message || "The coupon code you entered is not valid or has expired.",
+                });
+                setCouponCode("");
+                setDiscountAmount(0);
+                setAppliedCoupon("");
+                return;
+            }
+            setDiscountAmount(result.discountAmount);
+            setAppliedCoupon(couponCode.trim().toUpperCase());
+            setCouponCode("");
+            toast({
+                title: "Coupon Applied!",
+                description: `You saved ${formatPrice(result.discountAmount)} with coupon ${couponCode.trim().toUpperCase()}`,
+            });
+        } catch (err: any) {
             toast({
                 variant: "destructive",
                 title: "Invalid Coupon",
-                description: "The coupon code you entered is not valid or has expired.",
+                description: err?.response?.data?.message || "The coupon code you entered is not valid or has expired.",
             });
             setCouponCode("");
             setDiscountAmount(0);
             setAppliedCoupon("");
-            return;
         }
-        const discount = subtotalBeforeDiscount * discountPercent;
-        setDiscountAmount(discount);
-        setAppliedCoupon(couponCode.toUpperCase());
-        setCouponCode("");
-        toast({
-            title: "Coupon Applied!",
-            description: `You saved ${formatPrice(discount)} with coupon ${couponCode.toUpperCase()}`,
-        });
-    };
-
-    const formatPrice = (price: number) => {
-        return new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0,
-        }).format(price);
     };
 
     const onSubmit = async (data: CheckoutValues) => {
-        setIsSubmitting(true);
+        // Bug #167: createOrder.isPending now drives the submit-disabled state.
 
         try {
             // Bug #38: Validate cart is not empty before proceeding
@@ -211,7 +265,6 @@ export default function Checkout() {
                     title: "Cart is Empty",
                     description: "Please add items to your cart before checking out.",
                 });
-                setIsSubmitting(false);
                 return;
             }
 
@@ -238,11 +291,12 @@ export default function Checkout() {
                     postalCode: data.zipCode,
                     state: data.state,
                 },
-                paymentMethod: data.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment',
+                paymentMethod: 'Cash on Delivery',
                 itemsPrice: totalPrice,
                 taxPrice: tax,
                 shippingPrice: shipping,
                 totalPrice: grandTotal,
+                ...(appliedCoupon ? { couponCode: appliedCoupon, discountAmount } : {}),
             });
 
             // Save details if requested
@@ -267,8 +321,22 @@ export default function Checkout() {
                 description: "Your order has been confirmed and is being processed.",
             });
 
+            // Bug #29: remove just-purchased items from wishlist so the user
+            // doesn't see them as "saved for later" after they've already bought them.
+            try {
+                const purchasedIds = new Set(items.map((it) => it.productId));
+                wishlistItems.forEach((wItem: any) => {
+                    const wid = wItem._id || wItem.id;
+                    if (wid && purchasedIds.has(wid)) {
+                        removeFromWishlist(wid);
+                    }
+                });
+            } catch (e) {
+                // non-fatal — wishlist cleanup is best-effort
+                console.warn('Wishlist cleanup post-purchase failed', e);
+            }
+
             clearCart();
-            setIsSubmitting(false);
             navigate("/account");
         } catch (error) {
             toast({
@@ -276,7 +344,6 @@ export default function Checkout() {
                 title: "Order Failed",
                 description: "There was an issue processing your order. Please try again.",
             });
-            setIsSubmitting(false);
         }
     };
 
@@ -305,6 +372,7 @@ export default function Checkout() {
 
     return (
         <div className="min-h-screen flex flex-col bg-[#F9FAFB]">
+            <SEO title="Checkout" noindex description="Complete your Urban Drape order." />
             <Header />
 
             <main className="flex-1 container max-w-7xl px-4 py-8 md:py-12 mx-auto">
@@ -361,9 +429,30 @@ export default function Checkout() {
                                     Delivery Options
                                 </h2>
 
+                                {/* Sprint 6 / BUG-F-016: cards are now real buttons.
+                                    "Use saved" repopulates the form from localStorage; "Add new"
+                                    clears it and focuses the first field. */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {savedData && (
-                                        <div className="border-2 border-red-600 bg-red-50/20 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all">
+                                        <button
+                                            type="button"
+                                            aria-label="Use saved address"
+                                            onClick={() => {
+                                                form.reset({
+                                                    firstName: savedData.firstName || '',
+                                                    lastName: savedData.lastName || '',
+                                                    email: savedData.email || '',
+                                                    phone: savedData.phone || '',
+                                                    address: savedData.address || '',
+                                                    city: savedData.city || '',
+                                                    state: savedData.state || '',
+                                                    zipCode: savedData.zipCode || '',
+                                                    saveAddress: true,
+                                                    paymentMethod: 'cod',
+                                                });
+                                            }}
+                                            className="text-left w-full border-2 border-red-600 bg-red-50/20 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all hover:bg-red-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                        >
                                             <div className="absolute top-0 right-0 p-1.5 bg-red-600 text-white rounded-bl-lg">
                                                 <CheckCircle2 className="w-4 h-4" />
                                             </div>
@@ -371,16 +460,41 @@ export default function Checkout() {
                                                 <span className="bg-slate-100 text-xs font-medium px-2 py-0.5 rounded text-slate-600">Saved</span>
                                                 <p className="font-semibold text-sm">{savedData.firstName} {savedData.lastName}</p>
                                             </div>
-                                            <p className="text-sm text-slate-600 leading-relaxed truncate">{savedData.address}<br />{savedData.city}, {savedData.state}<br />{savedData.zipCode}</p>
-                                        </div>
+                                            <p className="text-sm text-slate-600 leading-relaxed truncate">
+                                                {savedData.address}<br />{savedData.city}, {savedData.state}<br />{savedData.zipCode}
+                                            </p>
+                                        </button>
                                     )}
 
-                                    <div className="border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors rounded-xl p-5 cursor-pointer flex flex-col items-center justify-center text-slate-500 min-h-[120px]">
+                                    <button
+                                        type="button"
+                                        aria-label="Enter a new address"
+                                        onClick={() => {
+                                            form.reset({
+                                                firstName: user?.firstName || '',
+                                                lastName: user?.lastName || '',
+                                                email: user?.email || '',
+                                                phone: '',
+                                                address: '',
+                                                city: '',
+                                                state: '',
+                                                zipCode: '',
+                                                saveAddress: true,
+                                                paymentMethod: 'cod',
+                                            });
+                                            // Focus the address field — most useful place to land.
+                                            setTimeout(() => {
+                                                const el = document.querySelector<HTMLInputElement>('input[name="address"]');
+                                                el?.focus();
+                                            }, 0);
+                                        }}
+                                        className="border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors rounded-xl p-5 cursor-pointer flex flex-col items-center justify-center text-slate-500 min-h-[120px] focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                                    >
                                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-400">
                                             <Plus className="w-5 h-5" />
                                         </div>
                                         <p className="text-sm font-medium">Add New Address</p>
-                                    </div>
+                                    </button>
                                 </div>
                             </div>
 
@@ -394,29 +508,30 @@ export default function Checkout() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
                                     <FormField control={form.control} name="firstName" render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-slate-700">First Name</FormLabel>
+                                            {/* Bug #92: indicate required field */}
+                                            <FormLabel className="text-slate-700">First Name <span className="text-red-600">*</span></FormLabel>
                                             <FormControl>
-                                                <Input className="h-11 bg-slate-50/50" placeholder="John" {...field} />
+                                                <Input className="h-11 bg-slate-50/50 text-base md:text-sm" placeholder="John" {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )} />
                                     <FormField control={form.control} name="lastName" render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-slate-700">Last Name</FormLabel>
+                                            <FormLabel className="text-slate-700">Last Name <span className="text-red-600">*</span></FormLabel>
                                             <FormControl>
-                                                <Input className="h-11 bg-slate-50/50" placeholder="Doe" {...field} />
+                                                <Input className="h-11 bg-slate-50/50 text-base md:text-sm" placeholder="Doe" {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )} />
                                     <FormField control={form.control} name="email" render={({ field }) => (
                                         <FormItem className="relative">
-                                            <FormLabel className="text-slate-700">Email Address</FormLabel>
+                                            <FormLabel className="text-slate-700">Email Address <span className="text-red-600">*</span></FormLabel>
                                             <FormControl>
                                                 <Input
                                                     type="email"
-                                                    className="h-11 bg-slate-50/50"
+                                                    className="h-11 bg-slate-50/50 text-base md:text-sm"
                                                     placeholder="john@example.com"
                                                     {...field}
                                                     autoComplete="email"
@@ -443,7 +558,7 @@ export default function Checkout() {
                                     )} />
                                     <FormField control={form.control} name="phone" render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-slate-700">Phone Number</FormLabel>
+                                            <FormLabel className="text-slate-700">Phone Number <span className="text-red-600">*</span></FormLabel>
                                             <FormControl>
                                                 <div className="flex bg-slate-50/50 rounded-md border border-input ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 overflow-hidden h-11">
                                                     <PhoneInput
@@ -471,9 +586,9 @@ export default function Checkout() {
                                 <div className="space-y-5">
                                     <FormField control={form.control} name="address" render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel className="text-slate-700">Address Line</FormLabel>
+                                            <FormLabel className="text-slate-700">Address Line <span className="text-red-600">*</span></FormLabel>
                                             <FormControl>
-                                                <Input className="h-11 bg-slate-50/50" placeholder="Flat No, Building Name, Street" {...field} />
+                                                <Input className="h-11 bg-slate-50/50 text-base md:text-sm" placeholder="Flat No, Building Name, Street" {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -482,18 +597,18 @@ export default function Checkout() {
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5">
                                         <FormField control={form.control} name="city" render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel className="text-slate-700">City</FormLabel>
+                                                <FormLabel className="text-slate-700">City <span className="text-red-600">*</span></FormLabel>
                                                 <FormControl>
-                                                    <Input className="h-11 bg-slate-50/50" placeholder="Mumbai" {...field} />
+                                                    <Input className="h-11 bg-slate-50/50 text-base md:text-sm" placeholder="Mumbai" {...field} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
                                         )} />
                                         <FormField control={form.control} name="state" render={({ field }) => (
                                             <FormItem>
-                                                <FormLabel className="text-slate-700">State</FormLabel>
+                                                <FormLabel className="text-slate-700">State <span className="text-red-600">*</span></FormLabel>
                                                 <FormControl>
-                                                    <Input className="h-11 bg-slate-50/50" placeholder="Maharashtra" {...field} />
+                                                    <Input className="h-11 bg-slate-50/50 text-base md:text-sm" placeholder="Maharashtra" {...field} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -501,12 +616,29 @@ export default function Checkout() {
                                         <FormField control={form.control} name="zipCode" render={({ field }) => (
                                             <FormItem>
                                                 <FormLabel className="text-slate-700 flex justify-between items-center">
-                                                    <span>Postal Code</span>
+                                                    <span>Postal Code <span className="text-red-600">*</span></span>
                                                     {isFetchingLocation && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                                                 </FormLabel>
                                                 <FormControl>
                                                     {/* Bug #280: Prevent non-numeric input in postal code */}
-                                                <Input className="h-11 bg-slate-50/50" placeholder="400001" {...field} maxLength={6} inputMode="numeric" onKeyPress={(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }} />
+                                                <Input
+                                                    className="h-11 bg-slate-50/50 text-base md:text-sm"
+                                                    placeholder="400001"
+                                                    {...field}
+                                                    maxLength={6}
+                                                    inputMode="numeric"
+                                                    autoComplete="postal-code"
+                                                    onKeyPress={(e) => { if (!/[0-9]/.test(e.key)) e.preventDefault(); }}
+                                                    onPaste={(e) => {
+                                                        // Bug #7: strip non-digits from pasted content
+                                                        const pasted = e.clipboardData.getData('text');
+                                                        const cleaned = pasted.replace(/\D/g, '').slice(0, 6);
+                                                        if (cleaned !== pasted) {
+                                                            e.preventDefault();
+                                                            field.onChange(cleaned);
+                                                        }
+                                                    }}
+                                                />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -569,28 +701,24 @@ export default function Checkout() {
                                                 <p className="text-sm text-slate-500 ml-7">Pay in cash when order arrives.</p>
                                             </div>
 
+                                            {/* Sprint 1 / BUG-F-044: Online Payment is not wired to a gateway yet.
+                                                The previous code routed the order to the same COD handler with
+                                                paymentMethod: 'Online Payment', leaving the customer believing they had paid.
+                                                Disable the option until a gateway integration is added. */}
                                             <div
                                                 className={cn(
-                                                    "border-2 rounded-xl p-5 cursor-pointer relative overflow-hidden transition-all",
-                                                    field.value === 'online' ? "border-red-600 bg-red-50/20" : "border-slate-200 bg-white hover:bg-slate-50"
+                                                    "border-2 rounded-xl p-5 relative overflow-hidden transition-all",
+                                                    "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed"
                                                 )}
-                                                onClick={() => field.onChange('online')}
+                                                aria-disabled="true"
+                                                title="Online payments are coming soon. Please use Cash on Delivery."
                                             >
-                                                {field.value === 'online' && (
-                                                    <div className="absolute top-0 right-0 p-1.5 bg-red-600 text-white rounded-bl-lg">
-                                                        <CheckCircle2 className="w-4 h-4" />
-                                                    </div>
-                                                )}
                                                 <div className="flex items-center gap-3 mb-2">
-                                                    <div className={cn(
-                                                        "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                                                        field.value === 'online' ? "border-red-600" : "border-slate-300"
-                                                    )}>
-                                                        {field.value === 'online' && <div className="w-2 h-2 rounded-full bg-red-600" />}
-                                                    </div>
+                                                    <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
                                                     <p className="font-semibold text-sm">Online Payment</p>
+                                                    <span className="ml-auto text-[10px] uppercase tracking-wide bg-slate-200 text-slate-600 px-2 py-0.5 rounded">Coming soon</span>
                                                 </div>
-                                                <p className="text-sm text-slate-500 ml-7">UPI, Credit/Debit Cards, Netbanking.</p>
+                                                <p className="text-sm text-slate-500 ml-7">UPI, Credit/Debit Cards, Netbanking — not available yet.</p>
                                             </div>
                                         </div>
                                     </FormItem>
@@ -600,7 +728,9 @@ export default function Checkout() {
                         </div>
 
                         {/* Right Column - Order Summary (Sticky) */}
-                        <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 space-y-6">
+                        {/* Bug #82: cap sticky sidebar height + scroll on overflow so it
+                            doesn't spill below the viewport on shorter screens. */}
+                        <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-24 space-y-6 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
                             <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/20">
                                 <h2 className="text-xl font-semibold mb-6">Order Summary</h2>
 
@@ -638,9 +768,11 @@ export default function Checkout() {
 
                                 {/* Bug #172: Promo/coupon codes */}
                                 <div className="mb-5 space-y-2">
-                                    <label className="text-sm font-medium text-slate-700">Promo Code</label>
+                                    {/* Bug #182: associate label with input via htmlFor */}
+                                    <label htmlFor="promo-code-input" className="text-sm font-medium text-slate-700">Promo Code</label>
                                     <div className="flex gap-2">
                                         <Input
+                                            id="promo-code-input"
                                             placeholder="Enter coupon code"
                                             value={couponCode}
                                             onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
@@ -652,9 +784,9 @@ export default function Checkout() {
                                             variant="outline"
                                             size="sm"
                                             onClick={applyCoupon}
-                                            disabled={!!appliedCoupon || !couponCode}
+                                            disabled={!!appliedCoupon || !couponCode || validatePromo.isPending}
                                         >
-                                            Apply
+                                            {validatePromo.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
                                         </Button>
                                     </div>
                                     {appliedCoupon && (
@@ -712,7 +844,7 @@ export default function Checkout() {
                                 <Button
                                     type="submit"
                                     className="w-full h-14 text-base font-semibold bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20 transition-all active:scale-[0.98]"
-                                    disabled={isSubmitting}
+                                    disabled={isSubmitting || createOrder.isPending}
                                 >
                                     {isSubmitting ? "Processing Securely..." : `Place Order — ${formatPrice(grandTotal)}`}
                                 </Button>

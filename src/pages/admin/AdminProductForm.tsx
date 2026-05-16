@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Upload, X } from 'lucide-react';
+import { ArrowLeft, Upload, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -152,6 +152,24 @@ export default function AdminProductForm() {
         setImagePreviews(prev => prev.filter((_, i) => i !== index));
     };
 
+    // Bug #43: image reorder doesn't save — provide explicit move controls so
+    // the array order in state (which is what onSubmit uses) is user-controllable.
+    const moveImage = (index: number, direction: -1 | 1) => {
+        const newIndex = index + direction;
+        setImagePreviews(prev => {
+            if (newIndex < 0 || newIndex >= prev.length) return prev;
+            const next = [...prev];
+            [next[index], next[newIndex]] = [next[newIndex], next[index]];
+            return next;
+        });
+        setImageFiles(prev => {
+            if (newIndex < 0 || newIndex >= prev.length) return prev;
+            const next = [...prev];
+            [next[index], next[newIndex]] = [next[newIndex], next[index]];
+            return next;
+        });
+    };
+
     const handleTagAdd = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault();
@@ -175,7 +193,7 @@ export default function AdminProductForm() {
 
         const newId = existingProduct ? (existingProduct as any)._id || existingProduct.id : undefined;
 
-        const completeProduct = {
+        const completeProduct = ({
             ...data,
             sizes: selectedSizes,
             colors: selectedColors.map(c => ({ name: c, hex: COLOR_HEX_MAP[c] || '#000000' })),
@@ -183,7 +201,7 @@ export default function AdminProductForm() {
             images: imagePreviews, // Storing blobs/urls for now
             rating: existingProduct?.rating || 0,
             reviewCount: existingProduct?.reviewCount || 0
-        } as Omit<Product, 'id'>;
+        } as unknown as Omit<Product, 'id'>);
 
         try {
             if (existingProduct && newId) {
@@ -294,6 +312,27 @@ export default function AdminProductForm() {
                                             {imagePreviews.map((preview, index) => (
                                                 <div key={index} className="relative aspect-square rounded-md overflow-hidden border group">
                                                     <img src={preview} alt={`Preview ${index}`} className="object-cover w-full h-full" />
+                                                    {/* Bug #43: explicit reorder controls — array order persists on save */}
+                                                    <div className="absolute bottom-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => moveImage(index, -1)}
+                                                            disabled={index === 0}
+                                                            className="bg-black/50 hover:bg-black/80 disabled:opacity-30 text-white rounded-full p-1"
+                                                            aria-label="Move image left"
+                                                        >
+                                                            <ChevronLeft className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => moveImage(index, 1)}
+                                                            disabled={index === imagePreviews.length - 1}
+                                                            className="bg-black/50 hover:bg-black/80 disabled:opacity-30 text-white rounded-full p-1"
+                                                            aria-label="Move image right"
+                                                        >
+                                                            <ChevronRight className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
                                                     <button
                                                         type="button"
                                                         onClick={() => removeImage(index)}

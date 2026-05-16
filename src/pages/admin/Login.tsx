@@ -10,11 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useAdminAuthStore } from '@/stores/adminAuthStore';
+import { useAuthContext } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
+// Sprint 5 / BUG-F-011: admin password policy must match customer Auth (≥8).
 const loginSchema = z.object({
     email: z.string().email('Please enter a valid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -22,6 +24,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function AdminLogin() {
     const navigate = useNavigate();
     const { login } = useAdminAuthStore();
+    // Sprint 5 / BUG-F-010: also push the user into AuthContext so the public
+    // Header / Account UI immediately reflect the logged-in admin.
+    const { login: authContextLogin } = useAuthContext();
     const [isLoading, setIsLoading] = useState(false);
 
     const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
@@ -41,16 +46,35 @@ export default function AdminLogin() {
             });
             const user = response.data;
 
+            // Sprint 5 / BUG-F-009: verify isAdmin BEFORE persisting userInfo.
+            // Previously, a non-admin who hit /admin/login with valid creds was
+            // signed in everywhere (just not granted the admin shell).
             if (!user.isAdmin) {
                 toast.error('Access denied. Admin privileges required.');
                 setIsLoading(false);
                 return;
             }
 
-            // Save user to localStorage to maintain session for API calls
             localStorage.setItem('userInfo', JSON.stringify(user));
 
-            login(user.email, 'admin');
+            const ok = login({
+                email: user.email,
+                isAdmin: user.isAdmin === true,
+                firstName: user.firstName,
+                lastName: user.lastName,
+            });
+            if (!ok) {
+                toast.error('Access denied. Admin privileges required.');
+                setIsLoading(false);
+                return;
+            }
+            // Sprint 5 / BUG-F-010: keep AuthContext / useAuthStore in sync so
+            // the public Header dropdown shows "My Profile" right after admin login.
+            try {
+                authContextLogin(user);
+            } catch (e) {
+                console.warn('AuthContext sync after admin login failed:', e);
+            }
             toast.success('Logged in successfully');
             navigate('/admin/dashboard');
         } catch (error: any) {
@@ -96,7 +120,12 @@ export default function AdminLogin() {
                         <div className="space-y-2">
                             <div className="flex justify-between items-center">
                                 <Label htmlFor="password">Password</Label>
-                                <Button variant="link" className="p-0 h-auto text-xs text-muted-foreground" type="button">
+                                <Button
+                                    variant="link"
+                                    className="p-0 h-auto text-xs text-muted-foreground"
+                                    type="button"
+                                    onClick={() => toast.info('Please contact your system administrator to reset your password.')}
+                                >
                                     Forgot password?
                                 </Button>
                             </div>

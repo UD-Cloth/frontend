@@ -9,6 +9,7 @@ import { ProductInfo } from "@/components/products/ProductInfo";
 import { useProductById, useProductsByCategory } from "@/hooks/useProducts";
 import { ProductReviews } from "@/components/products/ProductReviews";
 import { Loader2, Home } from "lucide-react";
+import SEO from "@/components/SEO";
 
 const ProductDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -17,7 +18,9 @@ const ProductDetail = () => {
     typeof product?.category === "string" ? product.category : product?.category?._id
   );
 
-  if (isProductLoading || isRelatedLoading) {
+  // Bug #56: don't block whole page on related-products fetch — show skeleton
+  // inside the "You May Also Like" carousel instead.
+  if (isProductLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Header />
@@ -48,18 +51,43 @@ const ProductDetail = () => {
 
   const categoryName = typeof product.category === 'string' ? product.category : product.category?.name;
 
-  // Bug #124: Dynamic page title
-  useEffect(() => {
-    document.title = `${product.name} — URBAN DRAPE`;
-    return () => { document.title = 'URBAN DRAPE - Premium Men\'s Fashion'; };
-  }, [product.name]);
-  
   const relatedProducts = relatedProductsData.filter(
     (p) => (p._id || p.id) !== (product._id || product.id)
   );
 
+  // Sprint 2 + Sprint 6 / BUG-F-084 + Sprint 7 / BUG-F-095: JSON-LD Product
+  // schema for rich Google result eligibility, with no `as any` casts.
+  const stockValue = product.stock ?? product.countInStock;
+  const offer: Record<string, unknown> = {
+    '@type': 'Offer',
+    priceCurrency: 'INR',
+    price: product.price,
+  };
+  if (typeof stockValue === 'number') {
+    offer.availability = stockValue > 0
+      ? 'https://schema.org/InStock'
+      : 'https://schema.org/OutOfStock';
+  }
+  const jsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org/',
+    '@type': 'Product',
+    name: product.name,
+    image: product.images?.length ? product.images : (product.image ? [product.image] : []),
+    description: product.description || `${product.name} — Urban Drape`,
+    sku: product.sku || product._id || product.id,
+    brand: { '@type': 'Brand', name: product.brand || 'Urban Drape' },
+    offers: offer,
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      <SEO
+        title={product.name}
+        description={product.description?.slice(0, 160) || `Buy ${product.name} from Urban Drape.`}
+        image={product.images?.[0] || product.image}
+        ogType="product"
+        jsonLd={jsonLd}
+      />
       <Header />
 
       <main className="flex-1">
@@ -87,7 +115,7 @@ const ProductDetail = () => {
                 <ProductImageGallery
                   images={product.images && product.images.length > 0 ? product.images : [product.image]}
                   name={product.name}
-                  isNew={product.isNewItem || product.isNew}
+                  isNew={product.isNewItem || product.isNew || product.isNewArrival}
                 />
               </div>
 
@@ -101,9 +129,14 @@ const ProductDetail = () => {
         <ProductReviews productId={product._id || product.id || ""} />
 
         {/* Related Products */}
-        {relatedProducts.length > 0 && (
+        {/* Bug #56: render skeleton cards while related-products fetch is in flight */}
+        {(isRelatedLoading || relatedProducts.length > 0) && (
           <section className="border-t bg-secondary/20">
-            <ProductCarousel title="You May Also Like" products={relatedProducts} />
+            <ProductCarousel
+              title="You May Also Like"
+              products={relatedProducts}
+              isLoading={isRelatedLoading}
+            />
           </section>
         )}
       </main>

@@ -3,10 +3,12 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { formatPrice } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, Loader2, Package, Truck } from "lucide-react";
 import api from "@/lib/api";
+import SEO from "@/components/SEO";
 
 interface OrderItem {
   name: string;
@@ -31,12 +33,24 @@ interface Order {
 }
 
 const OrderDetail = () => {
-  const { orderId } = useParams<{ orderId: string }>();
+  // Sprint 4 / BUG-F-050: route param is `:id` (App.tsx). Reading `orderId`
+  // here always returned undefined → "Order not found" for every order.
+  const { id: orderId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    if (!localStorage.getItem("userInfo")) {
+    // Sprint 7 / BUG-F-051: localStorage can throw in private browsing /
+    // sandboxed contexts. Guard the access so the page can still render or
+    // redirect cleanly. RequireAuth (Sprint 4) wraps this route, so a missing
+    // userInfo here is the unusual case — we still defend.
+    let signedIn = false;
+    try {
+      signedIn = !!localStorage.getItem("userInfo");
+    } catch {
+      signedIn = false;
+    }
+    if (!signedIn) {
       navigate("/auth");
       return;
     }
@@ -57,6 +71,7 @@ const OrderDetail = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
+        <SEO title="Order detail" description="Order details." noindex />
         <Header />
         <main className="flex-1 flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -102,13 +117,19 @@ const OrderDetail = () => {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-      <main className="flex-1 container px-4 py-8 max-w-2xl mx-auto">
-        <div className="mb-6">
+    <div className="min-h-screen flex flex-col bg-background print:bg-white">
+      {/* Bug #30: hide site chrome on print so the order detail acts as a clean invoice */}
+      <div className="print:hidden">
+        <Header />
+      </div>
+      <main className="flex-1 container px-4 py-8 max-w-2xl mx-auto print:max-w-full print:py-0">
+        <div className="mb-6 flex items-center justify-between print:hidden">
           <Link to="/account" className="text-sm text-primary hover:underline">
             ← Back to Account
           </Link>
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            Print invoice
+          </Button>
         </div>
 
         <h1 className="text-2xl font-bold mb-2">
@@ -186,7 +207,7 @@ const OrderDetail = () => {
                   </p>
                 </div>
                 <p className="font-medium">
-                  ₹{(item.price * item.qty).toLocaleString("en-IN")}
+                  {formatPrice(item.price * item.qty)}
                 </p>
               </div>
             ))}
@@ -213,12 +234,14 @@ const OrderDetail = () => {
             </div>
             <div className="flex justify-between text-lg font-bold pt-4 border-t">
               <span>Total</span>
-              <span>₹{order.totalPrice?.toLocaleString("en-IN")}</span>
+              <span>{formatPrice(order.totalPrice ?? 0)}</span>
             </div>
           </CardContent>
         </Card>
       </main>
-      <Footer />
+      <div className="print:hidden">
+        <Footer />
+      </div>
     </div>
   );
 };

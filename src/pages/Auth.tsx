@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link, useLocation } from "react-router-dom";
+import { useNavigate, Link, useLocation, useSearchParams } from "react-router-dom";
 import { useLogin, useRegister } from "@/hooks/useAuth";
 import { useAuthContext } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { toast } from "sonner";
+import SEO from "@/components/SEO";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 // Bug #6: Enforce password strength (min 8 chars)
@@ -44,8 +45,11 @@ export default function Auth() {
   // Bug #218: Show message passed via navigation state (e.g. "Please sign in to view your account")
   const locationMessage = (location.state as any)?.message;
 
-  // Bug #28: Preserve intended destination via returnUrl
-  const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') || '/';
+  // Bug #28 + Sprint 7 / BUG-F-024 + BUG-F-058: use the router's reactive
+  // `useSearchParams` so a returnUrl change (e.g. a link from a different
+  // protected page) is picked up without a remount.
+  const [searchParams] = useSearchParams();
+  const returnUrl = searchParams.get('returnUrl') || '/';
 
   // Bug #25: Handle tab changes by clearing shared form fields to prevent state leakage
   const handleTabChange = (value: string) => {
@@ -139,6 +143,7 @@ export default function Auth() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <SEO title="Sign in" noindex description="Sign in or create your Urban Drape account." />
       <div className="w-full max-w-md">
         <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -183,7 +188,15 @@ export default function Auth() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="signin-password">Password</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="signin-password">Password</Label>
+                      <Link
+                        to="/auth/reset-password"
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
                     <div className="relative">
                       {/* Bug #183: Eye icon correctly toggles input type */}
                       <Input
@@ -192,6 +205,8 @@ export default function Auth() {
                         placeholder="••••••••"
                         value={password}
                         autoComplete="current-password"
+                        // Bug #95: keep font-family stable across password/text toggle
+                        style={{ fontFamily: 'inherit' }}
                         onChange={(e) => {
                           setPassword(e.target.value);
                           setErrors((prev) => ({ ...prev, password: undefined }));
@@ -202,9 +217,9 @@ export default function Auth() {
                         type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
                         className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                         onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
                       >
                         {showPassword ? (
                           <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -327,6 +342,8 @@ export default function Auth() {
                         placeholder="Min. 8 characters"
                         value={password}
                         autoComplete="new-password"
+                        // Bug #95: keep font-family stable across password/text toggle
+                        style={{ fontFamily: 'inherit' }}
                         onChange={(e) => {
                           setPassword(e.target.value);
                           setErrors((prev) => ({ ...prev, password: undefined }));
@@ -337,9 +354,9 @@ export default function Auth() {
                         type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
                         className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                         onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
                       >
                         {showPassword ? (
                           <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -363,6 +380,8 @@ export default function Auth() {
                         placeholder="Re-enter your password"
                         value={confirmPassword}
                         autoComplete="new-password"
+                        // Bug #95: keep font-family stable across password/text toggle
+                        style={{ fontFamily: 'inherit' }}
                         onChange={(e) => {
                           setConfirmPassword(e.target.value);
                           setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
@@ -373,9 +392,9 @@ export default function Auth() {
                         type="button"
                         variant="ghost"
                         size="icon"
+                        aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                         className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                       >
                         {showConfirmPassword ? (
                           <EyeOff className="h-4 w-4 text-muted-foreground" />

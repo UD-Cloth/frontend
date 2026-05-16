@@ -1,102 +1,110 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { Button } from "@/components/ui/button";
+import SEO from "@/components/SEO";
+import { Briefcase, MapPin, Clock, Mail, Heart, Sparkles, Users } from "lucide-react";
 
-// Bug #160: Careers page has real content (was empty placeholder)
 const openings = [
   {
-    title: "Senior Full-Stack Developer",
+    title: "Senior Product Designer",
+    location: "Mumbai, India",
+    type: "Full-time",
+    department: "Design",
+    description: "Lead end-to-end design for our shop, mobile app, and in-store kiosks. You'll partner closely with engineering and merchandising.",
+  },
+  {
+    title: "Backend Engineer (Node.js)",
+    location: "Remote (India)",
+    type: "Full-time",
     department: "Engineering",
-    location: "Mumbai / Remote",
-    type: "Full-time",
-    description: "Build and scale our e-commerce platform. Strong skills in Node.js, React, and MongoDB required.",
+    description: "Own services that power checkout, inventory, and order management. Strong TypeScript and MongoDB experience preferred.",
   },
   {
-    title: "Fashion Merchandiser",
-    department: "Product",
-    location: "Mumbai",
+    title: "Retail Associate",
+    location: "Bengaluru — Indiranagar Store",
     type: "Full-time",
-    description: "Curate and manage our product catalog. Experience in menswear buying and trend forecasting preferred.",
+    department: "Retail",
+    description: "Be the first face customers see when they walk into our flagship. Two years of premium retail experience required.",
   },
-  {
-    title: "Customer Success Executive",
-    department: "Operations",
-    location: "Mumbai / Hybrid",
-    type: "Full-time",
-    description: "Deliver exceptional post-purchase experiences. Excellent communication skills and attention to detail required.",
-  },
-  {
-    title: "Digital Marketing Specialist",
-    department: "Marketing",
-    location: "Remote",
-    type: "Full-time",
-    description: "Drive growth through SEO, SEM, and social media campaigns. Experience with D2C fashion brands is a plus.",
-  },
+];
+
+const values = [
+  { icon: Heart, title: "People first", body: "Our team gets full-cover health insurance, generous parental leave, and a real four-day workweek pilot." },
+  { icon: Sparkles, title: "Make the work better", body: "We ship in small steps and review each one. Craft beats output here." },
+  { icon: Users, title: "Quiet, kind teams", body: "No heroes, no death-marches. Disagree-and-commit, then move on." },
 ];
 
 const Careers = () => (
   <div className="min-h-screen flex flex-col bg-background">
+    <SEO title="Careers" description="Join the Urban Drape team." />
     <Header />
     <main className="flex-1">
-      <div className="bg-foreground text-background py-16 px-4 text-center">
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">Careers at Urban Drape</h1>
-        <p className="text-background/70 text-lg max-w-xl mx-auto">
-          Join a passionate team redefining premium menswear in India.
+      <section className="container px-4 md:px-8 py-12 md:py-20 max-w-5xl">
+        <span className="text-xs uppercase tracking-widest text-primary font-semibold">Careers</span>
+        <h1 className="text-3xl md:text-5xl font-bold mt-3 mb-4">Build the next era of considered fashion</h1>
+        <p className="text-muted-foreground text-lg max-w-2xl">
+          Urban Drape is a small, profitable team making clothes we want to wear for a long time. If that sounds like the kind of place you'd like to work, we'd love to hear from you.
         </p>
-      </div>
+      </section>
 
-      <div className="container px-4 md:px-8 py-12 max-w-4xl mx-auto">
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold mb-3">Why Work With Us?</h2>
-          <div className="grid sm:grid-cols-3 gap-4 text-sm">
-            {[
-              { icon: "🚀", title: "High Growth", desc: "Be part of a fast-growing D2C brand with real ownership and impact." },
-              { icon: "🤝", title: "Collaborative Culture", desc: "Flat hierarchy, open communication, and a team that genuinely cares." },
-              { icon: "💡", title: "Learn & Grow", desc: "Regular learning sessions, mentorship, and career development support." },
-            ].map(item => (
-              <div key={item.title} className="bg-secondary/40 rounded-xl p-5">
-                <div className="text-2xl mb-2">{item.icon}</div>
-                <h3 className="font-semibold mb-1">{item.title}</h3>
-                <p className="text-muted-foreground">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-2xl font-bold mb-6">Open Positions</h2>
-          <div className="space-y-4">
-            {openings.map((job) => (
-              <div key={job.title} className="border rounded-xl p-6 bg-card hover:shadow-md transition-shadow">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-1">{job.title}</h3>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded">{job.department}</span>
-                      <span className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded">{job.location}</span>
-                      <span className="bg-primary/10 text-primary text-xs px-2 py-1 rounded font-medium">{job.type}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{job.description}</p>
-                  </div>
-                  <Button variant="outline" size="sm" className="flex-shrink-0" asChild>
-                    <a href={`mailto:careers@urbandrape.com?subject=Application: ${encodeURIComponent(job.title)}`}>
-                      Apply Now
-                    </a>
-                  </Button>
+      <section className="bg-secondary/30 border-y">
+        <div className="container px-4 md:px-8 py-12 md:py-16 max-w-5xl">
+          <h2 className="text-2xl md:text-3xl font-bold mb-8">How we work</h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            {values.map(({ icon: Icon, title, body }) => (
+              <div key={title} className="rounded-xl bg-background p-6 border">
+                <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
+                  <Icon className="h-5 w-5" />
                 </div>
+                <h3 className="font-semibold text-lg mb-2">{title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
               </div>
             ))}
           </div>
-        </section>
-
-        <div className="mt-12 text-center bg-secondary/40 rounded-xl p-8">
-          <h3 className="text-xl font-bold mb-2">Don't see your role?</h3>
-          <p className="text-muted-foreground mb-4">Send us your resume and we'll reach out when a suitable opening comes up.</p>
-          <Button asChild>
-            <a href="mailto:careers@urbandrape.com">Send Resume</a>
-          </Button>
         </div>
-      </div>
+      </section>
+
+      <section className="container px-4 md:px-8 py-12 md:py-16 max-w-5xl">
+        <h2 className="text-2xl md:text-3xl font-bold mb-2">Open positions</h2>
+        <p className="text-muted-foreground mb-8">We hire for skill, judgement, and kindness — in that order.</p>
+
+        <div className="space-y-4">
+          {openings.map((job) => (
+            <article key={job.title} className="rounded-xl border bg-card p-5 md:p-6 hover:border-primary/50 transition-colors">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-lg md:text-xl font-semibold">{job.title}</h3>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
+                    <span className="flex items-center gap-1.5"><Briefcase className="h-3.5 w-3.5" />{job.department}</span>
+                    <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{job.location}</span>
+                    <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{job.type}</span>
+                  </div>
+                </div>
+                <a
+                  href={`mailto:urbandrape25@gmail.com?subject=Application: ${encodeURIComponent(job.title)}`}
+                  className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold hover:bg-primary/90 transition-colors"
+                >
+                  Apply
+                </a>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{job.description}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-12 rounded-2xl border bg-secondary/30 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+          <div>
+            <h3 className="font-semibold text-lg mb-1">Don't see your role?</h3>
+            <p className="text-sm text-muted-foreground">Send us a note. We're always interested in talking to thoughtful people.</p>
+          </div>
+          <a
+            href="mailto:urbandrape25@gmail.com?subject=General%20application"
+            className="inline-flex items-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-semibold hover:bg-secondary transition-colors"
+          >
+            <Mail className="h-4 w-4" />
+            urbandrape25@gmail.com
+          </a>
+        </div>
+      </section>
     </main>
     <Footer />
   </div>

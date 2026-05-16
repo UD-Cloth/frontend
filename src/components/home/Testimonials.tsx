@@ -1,9 +1,8 @@
 import { Star } from "lucide-react";
-import { useCMSData } from "@/hooks/useCMS";
+import { useCmsStore } from "@/stores/cmsStore";
 
 export const Testimonials = () => {
-    const { data: cmsData } = useCMSData();
-    const testimonials = cmsData?.testimonials || [];
+    const testimonials = useCmsStore(state => state.testimonials);
 
     if (!testimonials || testimonials.length === 0) return null;
 

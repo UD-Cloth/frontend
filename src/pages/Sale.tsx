@@ -1,16 +1,26 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { ProductCard } from "@/components/products/ProductCard";
 import { useSaleProducts } from "@/hooks/useProducts";
+import { ProductCard } from "@/components/products/ProductCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import SEO from "@/components/SEO";
 
 const Sale = () => {
-  const { data: products = [], isLoading } = useSaleProducts();
+  // Sprint 5 / BUG-F-030 + BUG-F-049: real API + real loading state.
+  const { data: products = [], isLoading, error } = useSaleProducts();
+
+  // Bug #67: sort sale products by discount percent (desc) by default
+  const sortedProducts = [...products].sort((a: any, b: any) => {
+    const pctA = a.price && a.discountPrice ? ((a.price - a.discountPrice) / a.price) * 100 : 0;
+    const pctB = b.price && b.discountPrice ? ((b.price - b.discountPrice) / b.price) * 100 : 0;
+    return pctB - pctA;
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEO title="Sale" description="Sale picks at Urban Drape — limited-time prices." />
       <Header />
-      
+
       <main className="flex-1">
         <div className="container px-4 py-8">
           <div className="mb-8">
@@ -30,6 +40,10 @@ const Sale = () => {
                 </div>
               ))}
             </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <p className="text-destructive">Could not load products. Please try again.</p>
+            </div>
           ) : products.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground text-lg">
@@ -41,7 +55,7 @@ const Sale = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-              {products.map((product) => (
+              {sortedProducts.map((product: any) => (
                 <ProductCard key={product._id || product.id} product={product} />
               ))}
             </div>

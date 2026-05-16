@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import api from '@/lib/api';
+// Bug #172: import shared localStorage key constants.
+import { USER_INFO_KEY, CART_STORAGE_KEY } from './authStore';
 
 export interface CartItem {
   productId: string;
@@ -32,7 +34,7 @@ function itemKey(item: { productId: string; size: string; color: string }) {
 
 function getAuthToken(): string | null {
   try {
-    const userInfo = localStorage.getItem('userInfo');
+    const userInfo = localStorage.getItem(USER_INFO_KEY);
     if (userInfo) {
       const parsed = JSON.parse(userInfo);
       return parsed.token || null;
@@ -131,7 +133,7 @@ export const useCartStore = create<CartStore>()(
 
         set({ isLoading: true });
         try {
-          const { data } = await api.get('/cart');
+          const { data } = await api.get<{ items?: any[] }>('/cart');
           if (data && data.items && Array.isArray(data.items)) {
             const serverItems: CartItem[] = data.items.map((item: any) => {
               const product = item.productId; // populated
@@ -223,7 +225,7 @@ export const useCartStore = create<CartStore>()(
       },
     }),
     {
-      name: 'urban-drape-cart',
+      name: CART_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ items: state.items }),
     }

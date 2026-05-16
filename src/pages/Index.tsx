@@ -7,22 +7,20 @@ import { TrustBadges } from "@/components/home/TrustBadges";
 import { PromoBanner } from "@/components/home/PromoBanner";
 import { Testimonials } from "@/components/home/Testimonials";
 import { useNewArrivals, useTrendingProducts } from "@/hooks/useProducts";
-import { Loader2 } from "lucide-react";
+import SEO from "@/components/SEO";
 
 const Index = () => {
-  const { data: newArrivals = [], isLoading: isNewLoading } = useNewArrivals();
-  const { data: trendingProducts = [], isLoading: isTrendingLoading } = useTrendingProducts();
-
-  if (isNewLoading || isTrendingLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
+  // Sprint 5 / BUG-F-030: home page now reads from the real API instead of
+  // the demo `useProductStore`. The previous wiring meant production users
+  // saw empty carousels.
+  const { data: newArrivals = [], isLoading: isLoadingNew } = useNewArrivals();
+  const { data: trendingProducts = [], isLoading: isLoadingTrending } = useTrendingProducts();
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEO
+        description="Urban Drape — modern Indian apparel. Shop sarees, kurtas, and contemporary essentials from across India."
+      />
       <Header />
 
       <main className="flex-1">
@@ -37,6 +35,7 @@ const Index = () => {
           title="New Arrivals"
           products={newArrivals}
           viewAllLink="/new-arrivals"
+          isLoading={isLoadingNew}
         />
 
         {/* Category Grid */}
@@ -47,9 +46,12 @@ const Index = () => {
 
         {/* Trending Products */}
         <ProductCarousel
-          title="Trending Now"
+          title="Trending This Season"
+          description="Explore our curated collection of premium men's fashion"
           products={trendingProducts}
           viewAllLink="/trending"
+          isLoading={isLoadingTrending}
+          className="bg-white border-y border-gray-100"
         />
 
         {/* Testimonials */}

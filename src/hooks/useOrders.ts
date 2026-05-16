@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { useAdminAuthStore } from '@/stores/adminAuthStore';
 
 interface OrderItem {
   name: string;
@@ -31,6 +32,8 @@ interface CreateOrderData {
   taxPrice: number;
   shippingPrice: number;
   totalPrice: number;
+  couponCode?: string;
+  discountAmount?: number;
 }
 
 export interface Order {
@@ -77,7 +80,7 @@ export function useMyOrders() {
   return useQuery<Order[]>({
     queryKey: ['myOrders'],
     queryFn: async () => {
-      const { data } = await api.get('/orders/myorders');
+      const { data } = await api.get<Order[]>('/orders/myorders');
       return data;
     },
   });
@@ -87,7 +90,7 @@ export function useOrderById(orderId?: string) {
   return useQuery<Order>({
     queryKey: ['order', orderId],
     queryFn: async () => {
-      const { data } = await api.get(`/orders/${orderId}`);
+      const { data } = await api.get<Order>(`/orders/${orderId}`);
       return data;
     },
     enabled: !!orderId,
@@ -95,31 +98,39 @@ export function useOrderById(orderId?: string) {
 }
 
 export function useAdminStats() {
+  // Sprint 5 / BUG-F-068: only fire (and only poll) when an admin is signed in.
+  // Without this guard, a customer-tab left open after admin logout kept hitting
+  // /admin/stats every 30s and 401-storming.
+  const isAdmin = useAdminAuthStore((s) => s.isAuthenticated && s.isAdmin);
   return useQuery<StatsResponse>({
     queryKey: ['adminStats'],
     queryFn: async () => {
-      // Bug #22/#152: Stats API is at /api/admin/stats (not /api/stats)
       const { data } = await api.get<StatsResponse>('/admin/stats');
       return data;
     },
-    // Bug #154: Add auto-refresh polling for dashboard
-    refetchInterval: 30000,
+    enabled: isAdmin,
+    refetchInterval: isAdmin ? 30000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 
 export function useAllOrders() {
+  const isAdmin = useAdminAuthStore((s) => s.isAuthenticated && s.isAdmin);
   return useQuery<Order[]>({
     queryKey: ['allOrders'],
     queryFn: async () => {
       const { data } = await api.get<any>('/orders');
-      // Extract the array from the paginated response { data, pagination }
       return data.data || data;
     },
-    // Bug #154: Add auto-refresh polling for orders
-    refetchInterval: 30000,
+    enabled: isAdmin,
+    refetchInterval: isAdmin ? 30000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 
+// Sprint 6 / BUG-F-096 + BUG-F-097: order-mutating hooks now also invalidate
+// `myOrders` and the per-order detail query, so customer-facing screens stay
+// fresh after admin actions.
 export function useUpdateOrderStatus() {
   const queryClient = useQueryClient();
 
@@ -128,8 +139,10 @@ export function useUpdateOrderStatus() {
       const { data } = await api.put(`/orders/${orderId}/status`, { status });
       return data as Order;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['allOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['myOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
       queryClient.invalidateQueries({ queryKey: ['adminStats'] });
     },
   });
@@ -143,8 +156,10 @@ export function useMarkOrderPaid() {
       const { data } = await api.put(`/orders/${orderId}/pay`, {});
       return data as Order;
     },
-    onSuccess: () => {
+    onSuccess: (_data, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['allOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['myOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
       queryClient.invalidateQueries({ queryKey: ['adminStats'] });
     },
   });
@@ -158,8 +173,10 @@ export function useCancelOrder() {
       const { data } = await api.put(`/orders/${orderId}/cancel`, {});
       return data as Order;
     },
-    onSuccess: () => {
+    onSuccess: (_data, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['allOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['myOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] });
       queryClient.invalidateQueries({ queryKey: ['adminStats'] });
     },
   });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProducts, useDeleteProduct } from '@/hooks/useProducts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +34,24 @@ export default function AdminProducts() {
     const navigate = useNavigate();
     const { data: products = [], isLoading } = useProducts();
     const deleteProductMutation = useDeleteProduct();
-    const [searchQuery, setSearchQuery] = useState('');
+    // Bug #32: persist current page + search in URL search params so editing
+    // a product and navigating back keeps the user on the same page.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const currentPage = Number(searchParams.get('page') || '1');
+    const searchQuery = searchParams.get('q') || '';
+    const setSearchQuery = (q: string) => {
+        const next = new URLSearchParams(searchParams);
+        if (q) next.set('q', q); else next.delete('q');
+        // reset to page 1 when search changes
+        next.set('page', '1');
+        setSearchParams(next, { replace: true });
+    };
+    const setCurrentPage = (page: number) => {
+        const next = new URLSearchParams(searchParams);
+        next.set('page', String(page));
+        setSearchParams(next, { replace: true });
+    };
+    void currentPage; void setCurrentPage;
     const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
     // A simple filter function for the mock data

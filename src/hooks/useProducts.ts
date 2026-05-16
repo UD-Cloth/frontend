@@ -9,12 +9,16 @@ export interface ApiCategory {
 }
 
 export const useCategories = () => {
+  // Sprint 7 / BUG-F-077: categories rarely change. 10-min stale + 1-hour gc
+  // saves a request on every focus/visibility-change.
   return useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
       const { data } = await api.get<ApiCategory[]>('/categories');
       return data;
     },
+    staleTime: 10 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
   });
 };
 
@@ -64,13 +68,28 @@ export const useProducts = (params?: {
   isSale?: boolean;
   q?: string;
 }) => {
+  // Sprint 5 / BUG-F-067: stable cache key from primitive params, not the
+  // object identity (the caller's object literal changes every render).
+  // Sprint 5 / BUG-F-073: skip the request entirely when `q` is the only param
+  // and it's empty — pages like SearchResults previously fired GET /products?q=
+  // for every visit with no query string.
+  const category = params?.category;
+  const isTrending = params?.isTrending;
+  const isNew = params?.isNew;
+  const isSale = params?.isSale;
+  const q = params?.q?.trim() ?? '';
+  const onlyQ = !!params && Object.keys(params).length === 1 && 'q' in params;
+  const enabled = !(onlyQ && q.length === 0);
+
   return useQuery({
-    queryKey: ['products', params],
+    queryKey: ['products', { category, isTrending, isNew, isSale, q }],
     queryFn: async () => {
-      const { data } = await api.get<any>('/products', { params });
-      // Bug #76: Return the nested data array from the paginated response
+      const { data } = await api.get<any>('/products', {
+        params: { category, isTrending, isNew, isSale, ...(q ? { q } : {}) },
+      });
       return Array.isArray(data) ? data : data.data || [];
     },
+    enabled,
   });
 };
 

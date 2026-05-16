@@ -1,9 +1,11 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Truck, Clock, MapPin } from "lucide-react";
+import SEO from "@/components/SEO";
 
 const Shipping = () => (
   <div className="min-h-screen flex flex-col bg-background">
+    <SEO title="Shipping policy" description="How Urban Drape ships, costs, and delivery times." />
     <Header />
     <main className="flex-1 container px-4 md:px-8 py-10 md:py-16 max-w-3xl">
       <h1 className="text-3xl md:text-4xl font-bold mb-6">Shipping Information</h1>

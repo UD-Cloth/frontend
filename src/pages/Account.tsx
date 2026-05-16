@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Package, User, LogOut, MapPin, ChevronRight, Lock, AlertTriangle } from "lucide-react";
+import SEO from "@/components/SEO";
+import { formatPrice } from "@/lib/utils";
+import { Loader2, Package, User, LogOut, MapPin, ChevronRight, Lock, AlertTriangle, Calendar, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +28,7 @@ import { useAuthContext } from "@/context/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { useProfile, useUpdateProfile } from "@/hooks/useAuth";
+import { useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 
 const Account = () => {
@@ -33,6 +36,7 @@ const Account = () => {
   const { toast } = useToast();
   const { user: authUser, logout } = useAuthContext();
   const { data: dashboardData, isLoading: loading } = useProfile();
+  const queryClient = useQueryClient();
   const updateProfileMutation = useUpdateProfile();
 
   const [activeTab, setActiveTab] = useState("orders");
@@ -83,19 +87,45 @@ const Account = () => {
     });
   };
 
+  // Sprint 7 / BUG-F-018: lightweight client-side validation that mirrors the
+  // backend caps (Sprint 5). Surfaces issues immediately instead of round-tripping.
+  // Sprint 7 / BUG-F-019: on full-name split, treat the first whitespace-token
+  // as firstName and EVERYTHING ELSE as lastName (preserving the user's spaces
+  // — "Mary Anne Smith" → first="Mary", last="Anne Smith"). Lossless round-trip
+  // requires separate inputs which is a bigger UI change; this is the best we
+  // can do with one combined input.
+  const validateProfile = (): string | null => {
+    if (profile.fullName.trim().length < 2) return 'Please enter your full name.';
+    if (profile.fullName.length > 200) return 'Full name is too long.';
+    if (profile.phone && !/^\+?[\d\s\-()]{7,20}$/.test(profile.phone)) return 'Please enter a valid phone number.';
+    if (profile.address.length > 500) return 'Address is too long.';
+    if (profile.city.length > 100) return 'City is too long.';
+    if (profile.state.length > 100) return 'State is too long.';
+    if (profile.postalCode && !/^\d{6}$/.test(profile.postalCode)) return 'PIN code must be exactly 6 digits.';
+    return null;
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    const validationError = validateProfile();
+    if (validationError) {
+      toast({ variant: 'destructive', title: 'Invalid input', description: validationError });
+      return;
+    }
     try {
-      const [fName, ...lName] = profile.fullName.trim().split(' ');
+      const trimmed = profile.fullName.trim();
+      const firstSpace = trimmed.indexOf(' ');
+      const fName = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
+      const lName = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1).trim();
 
       await updateProfileMutation.mutateAsync({
         firstName: fName || authUser?.firstName,
-        lastName: lName.join(' ') || authUser?.lastName,
+        lastName: lName || authUser?.lastName || '',
         phone: profile.phone,
         address: profile.address,
         city: profile.city,
         state: profile.state,
-        postalCode: profile.postalCode
+        postalCode: profile.postalCode,
       });
 
       toast({
@@ -144,13 +174,14 @@ const Account = () => {
     }
   };
 
-  // Bug #63: Cancel order handler — use /cancel endpoint (user-accessible), not /status (admin-only)
+  // Bug #63 + Sprint 5 / BUG-F-017: Cancel order via React Query so the page
+  // refreshes without losing scroll position, dialog state, or React tree.
   const handleCancelOrder = async (orderId: string) => {
     try {
       await api.put(`/orders/${orderId}/cancel`);
       toast({ title: "Order Cancelled", description: "Your order has been cancelled." });
-      // Refresh data
-      window.location.reload();
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['myOrders'] });
     } catch (e: any) {
       toast({
         variant: "destructive",
@@ -170,6 +201,7 @@ const Account = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      <SEO title="My account" noindex description="Manage your Urban Drape orders, profile, and addresses." />
       <Header />
       {/* Account-specific sub-header with sign out */}
       <div className="border-b bg-background/80 backdrop-blur-md">
@@ -187,18 +219,40 @@ const Account = () => {
 
           {/* Sidebar */}
           <div className="md:w-64 flex-shrink-0 space-y-6">
-            <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg border">
-              <Avatar className="h-12 w-12">
-                <AvatarImage src="" />
-                <AvatarFallback className="bg-primary text-primary-foreground text-lg">
-                  {authUser?.email?.[0].toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="overflow-hidden">
-                <p className="font-medium truncate">{profile.fullName || `${authUser?.firstName} ${authUser?.lastName}`}</p>
-                <p className="text-xs text-muted-foreground truncate">{authUser?.email}</p>
-              </div>
-            </div>
+            {/* UD-style Profile Overview Card */}
+            <Card className="shadow-sm border-slate-200 dark:border-slate-800 hover:shadow-md transition-shadow">
+              <CardHeader className="text-center pb-2">
+                <div className="mx-auto w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-3 border-4 border-white dark:border-slate-900 shadow-sm">
+                  <span className="text-2xl font-bold">
+                    {((authUser?.firstName?.[0]) || authUser?.email?.[0] || 'U').toUpperCase()}
+                    {((authUser?.lastName?.[0]) || '').toUpperCase()}
+                  </span>
+                </div>
+                <CardTitle className="text-base truncate">
+                  {profile.fullName || `${authUser?.firstName || ''} ${authUser?.lastName || ''}`.trim() || 'User'}
+                </CardTitle>
+                <CardDescription className="text-xs truncate">{authUser?.email}</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-3 space-y-3">
+                <Separator />
+                <div className="flex items-center text-xs text-slate-600 dark:text-slate-400">
+                  <Calendar className="w-3.5 h-3.5 mr-2 text-slate-400" />
+                  <span>Joined {(dashboardData?.profile as any)?.createdAt ? new Date((dashboardData?.profile as any).createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Recently'}</span>
+                </div>
+                {/* Sprint 6 / BUG-F-003: reflect actual backend emailVerified flag. */}
+                {(() => {
+                  const verified = Boolean((dashboardData?.profile as any)?.emailVerified);
+                  return (
+                    <div className="flex items-center text-xs">
+                      <ShieldCheck className={`w-3.5 h-3.5 mr-2 ${verified ? 'text-emerald-500' : 'text-amber-500'}`} />
+                      <span className={verified ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                        {verified ? 'Email Verified' : 'Email Not Verified'}
+                      </span>
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
 
             <nav className="flex flex-col gap-2">
               <Button
@@ -281,7 +335,7 @@ const Account = () => {
                             }`}>
                               {order.status || (order.isDelivered ? "Delivered" : "Pending")}
                             </span>
-                            <span className="font-bold">₹{order.totalPrice.toLocaleString()}</span>
+                            <span className="font-bold">{formatPrice(order.totalPrice)}</span>
                           </div>
                         </div>
                       </CardHeader>
@@ -292,7 +346,7 @@ const Account = () => {
                               <span className="text-muted-foreground">
                                 {item.qty}x <span className="text-foreground">{item.name}</span>
                               </span>
-                              <span>₹{item.price.toLocaleString()}</span>
+                              <span>{formatPrice(item.price)}</span>
                             </div>
                           ))}
                         </div>

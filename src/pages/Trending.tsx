@@ -1,22 +1,17 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ProductCard } from "@/components/products/ProductCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTrendingProducts } from "@/hooks/useProducts";
-import { Loader2 } from "lucide-react";
+import SEO from "@/components/SEO";
 
 const Trending = () => {
-  const { data: trendingProducts = [], isLoading } = useTrendingProducts();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
+  // Sprint 5 / BUG-F-030: real API instead of demo store.
+  const { data: trendingProducts = [], isLoading, error } = useTrendingProducts();
 
   return (
     <div className="min-h-screen flex flex-col">
+      <SEO title="Trending now" description="What everyone's loving at Urban Drape this week." />
       <Header />
 
       <main className="flex-1">
@@ -28,7 +23,21 @@ const Trending = () => {
             </p>
           </div>
 
-          {trendingProducts.length === 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="space-y-3">
+                  <Skeleton className="aspect-square w-full" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <p className="text-destructive">Could not load products. Please try again.</p>
+            </div>
+          ) : trendingProducts.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground text-lg">
                 No trending products available yet.
@@ -36,8 +45,8 @@ const Trending = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-              {trendingProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
+              {trendingProducts.map((product: any) => (
+                <ProductCard key={product._id || product.id} product={product} />
               ))}
             </div>
           )}

@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Search, Heart, ShoppingBag, User, Menu, X, ChevronDown, Loader2 } from "lucide-react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Search, Heart, ShoppingBag, User, Menu, X, Loader2, Star, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,415 +14,326 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWishlist } from "@/context/WishlistContext";
 import { CartDrawer } from "@/components/cart/CartDrawer";
-// Bug #36: Use cartStore (single source of truth) for cart badge count
 import { useCartStore } from "@/stores/cartStore";
-import { useCategories, useSearchProducts } from "@/hooks/useProducts";
+import { categories } from "@/data/products";
+import { useSearchProducts } from "@/hooks/useProducts";
+import { useAuthStore } from "@/stores/authStore";
 import { useAuthContext } from "@/context/AuthContext";
-
-interface SearchSuggestion {
-  id: string;
-  name: string;
-  price: number;
-  image: string;
-}
+import { useSettings } from "@/hooks/useSettings";
+import { formatPrice } from "@/lib/utils";
 
 export const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
   const navigate = useNavigate();
-  // Bug #36: cartStore is the canonical source for cart count
-  const { items: cartStoreItems } = useCartStore();
-  const cartItems = cartStoreItems.reduce((sum, item) => sum + item.quantity, 0);
+  const items = useCartStore((state) => state.items);
+  const cartItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const { totalItems: wishlistItems } = useWishlist();
-  const { data: categories = [] } = useCategories();
-  const { user, logout } = useAuthContext();
+  // Sprint 5 / BUG-F-031: search suggestions hit the real /products/search
+  // endpoint (debounced via the hook's `enabled: trimmed.length >= 2` and
+  // staleTime of 30s). Demo store is no longer consulted.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const { isAuthenticated } = useAuthStore();
+  // Sprint 4 / BUG-F-001: route logout through AuthContext so all stores
+  // (AuthContext, useAuthStore, useAdminAuthStore) are cleared in one shot.
+  // Calling useAuthStore.logout() alone leaves AuthContext.user populated.
+  const { logout } = useAuthContext();
+  const { data: settings } = useSettings();
 
-  // Bug #190: Use dedicated search API for suggestions instead of filtering all products client-side
-  const { data: searchResults = [], isLoading: isLoadingProducts } = useSearchProducts(
-    searchQuery.length >= 2 ? searchQuery : ""
-  );
-
-  const suggestions: SearchSuggestion[] = searchResults.map((p: any) => ({
-    id: p._id || p.id || "",
-    name: p.name,
-    price: p.price,
-    image: p.image || (p.images && p.images.length > 0 ? p.images[0] : ""),
-  }));
-
-  // Close suggestions when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    // Sprint 4 / BUG-F-043: only clear the `openCart` flag, not the entire
+    // history state — other routes may have set their own state we don't own.
+    if (location.state?.openCart) {
+      setIsCartOpen(true);
+      const { openCart, ...rest } = (location.state as any) || {};
+      navigate(location.pathname + location.search, { replace: true, state: Object.keys(rest).length ? rest : undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
-  const handleSearch = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Sprint 5 / BUG-F-032: debounce the query before firing the search hook.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const { data: searchSuggestions = [] } = useSearchProducts(debouncedQuery);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
       setIsSearchOpen(false);
       setSearchQuery("");
-      setShowSuggestions(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      setIsSearchOpen(false);
-      setSearchQuery("");
-      setShowSuggestions(false);
-    }
-  };
-
-  const handleSuggestionClick = (suggestion: SearchSuggestion) => {
-    navigate(`/product/${suggestion.id}`);
-    setIsSearchOpen(false);
-    setSearchQuery("");
-    setShowSuggestions(false);
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
+  const filteredSearchResults = searchSuggestions.slice(0, 5);
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-16 items-center justify-between px-4">
-          {/* Left Side - Dropdown Menu (Desktop) */}
-          <div className="hidden lg:flex items-center">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="group flex items-center gap-1 transition-all duration-200 hover:bg-accent">
-                  <Menu className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-                  <span className="font-medium">Shop</span>
-                  <ChevronDown className="h-4 w-4 transition-transform duration-300 group-data-[state=open]:rotate-180" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-48 bg-background border shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200"
-              >
-                {categories.map((category, index) => (
-                  <DropdownMenuItem
-                    key={(category as any)._id}
-                    asChild
-                    className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent"
-                    style={{ animationDelay: `${index * 30}ms` }}
-                  >
-                    <Link
-                      to={`/category/${(category as any).name}`}
-                      className="w-full cursor-pointer animate-fade-in"
-                    >
-                      {(category as any).name}
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator className="bg-border" />
-                <DropdownMenuItem
-                  asChild
-                  className="transition-colors duration-150 hover:bg-primary/10"
-                >
-                  <Link to="/new-arrivals" className="w-full cursor-pointer text-primary font-medium">
-                    New Arrivals
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  asChild
-                  className="transition-colors duration-150 hover:bg-primary/10"
-                >
-                  {/* Bug #112: Trending is now in the desktop menu */}
-                  <Link to="/trending" className="w-full cursor-pointer text-primary font-medium">
-                    Trending
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  asChild
-                  className="transition-colors duration-150 hover:bg-primary/10"
-                >
-                  <Link to="/sale" className="w-full cursor-pointer text-primary font-medium">
-                    Sale
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+      {/* Social Proof Announcement Bar */}
+      {settings?.isAnnouncementActive && settings?.announcementText && (
+        <div className={`bg-primary text-primary-foreground py-2 px-4 text-xs md:text-sm font-medium tracking-wide relative z-50 flex items-center h-10 w-full transition-colors ${settings.isAnnouncementScrolling ? 'overflow-hidden hover:bg-slate-900' : 'justify-center border-b border-primary/20'}`}>
+          {/* Bug #69: hint compositor with will-change + translate3d for smoother Firefox marquee */}
+          <div style={{ willChange: settings.isAnnouncementScrolling ? 'transform' : undefined, transform: settings.isAnnouncementScrolling ? 'translate3d(0,0,0)' : undefined }} className={`${settings.isAnnouncementScrolling ? 'animate-marquee inline-flex items-center gap-2 whitespace-nowrap' : 'flex items-center gap-2 text-center'}`}>
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+            <span>{settings.announcementText}</span>
+            {settings.isAnnouncementScrolling && (
+              <>
+                <span className="mx-8 text-white/20">•</span>
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                <span>{settings.announcementText}</span>
+              </>
+            )}
           </div>
+        </div>
+      )}
 
-          {/* Mobile Menu */}
-          <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-            <SheetTrigger asChild className="lg:hidden">
-              <Button variant="ghost" size="icon" aria-label="Open menu">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-[300px] overflow-y-auto">
-              {/* Bug #296: Logo link at top of mobile menu */}
-              <Link to="/" className="flex items-center mb-2 mt-1" onClick={() => setIsMobileMenuOpen(false)}>
-                <img src="/Tag logo-01.png" alt="Urban Drape" className="h-16 w-auto" />
-              </Link>
-              <nav className="flex flex-col gap-4 mt-2">
-                <Link
-                  to="/"
-                  className="text-lg font-medium hover:text-primary transition-colors uppercase tracking-wide"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Home
-                </Link>
-                {categories.map((category) => (
+      <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-20 items-center justify-between px-4 lg:px-8">
+          {/* Left Side - Unified Slide-Out Menu */}
+          <div className="flex items-center">
+            <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 group transition-all duration-200 hover:bg-accent hover:text-accent-foreground px-2">
+                  <Menu className="h-6 w-6 transition-transform duration-200 group-hover:-translate-y-0.5" />
+                  <span className="text-sm font-bold tracking-[0.2em] hidden md:block mt-[2px]">MENU</span>
+                </Button>
+              </SheetTrigger>
+              {/* Bug #152: ensure mobile menu scrolls when content overflows viewport */}
+              <SheetContent side="left" className="w-[380px] max-w-full p-0 flex flex-col border-r-0 shadow-2xl overflow-y-auto">
+                <div className="flex items-center justify-between p-8 border-b border-border">
+                  <span className="text-lg font-bold tracking-[0.2em]">NAVIGATION</span>
+                </div>
+                
+                <nav className="flex-1 overflow-y-auto pt-10 px-8 flex flex-col gap-6">
                   <Link
-                    key={(category as any)._id}
-                    to={`/category/${(category as any).name}`}
-                    className="text-lg font-medium hover:text-primary transition-colors uppercase tracking-wide"
+                    to="/new-arrivals"
+                    className="group flex flex-col gap-1 transition-all duration-300"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    {(category as any).name}
+                    <span className="text-[22px] font-normal group-hover:font-bold text-foreground transition-all duration-300">New Arrivals</span>
                   </Link>
-                ))}
-                <Link
-                  to="/new-arrivals"
-                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  New Arrivals
-                </Link>
-                {/* Bug #112: Trending was missing from mobile menu */}
-                <Link
-                  to="/trending"
-                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Trending
-                </Link>
-                <Link
-                  to="/sale"
-                  className="text-lg font-medium text-primary hover:text-primary/80 transition-colors uppercase tracking-wide"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Sale
-                </Link>
-              </nav>
-            </SheetContent>
-          </Sheet>
+
+                  <Link
+                    to="/trending"
+                    className="group flex flex-col gap-1 transition-all duration-300"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <span className="text-[22px] font-normal group-hover:font-bold text-foreground transition-all duration-300">Trending Now</span>
+                  </Link>
+                  
+                  {categories.map((category) => (
+                    <Link
+                      key={category.id}
+                      to={`/category/${category.id}`}
+                      className="group flex flex-col gap-1 transition-all duration-300"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <span className="text-[22px] font-normal group-hover:font-bold text-foreground transition-all duration-300">{category.name}</span>
+                    </Link>
+                  ))}
+                  
+                  <Link
+                    to="/sale"
+                    className="group flex flex-col gap-1 transition-all duration-300 mt-2"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <span className="text-[22px] font-bold text-red-600 hover:text-red-700 transition-all duration-300">Sale</span>
+                  </Link>
+                </nav>
+
+                {/* Bug #84: removed `mt-auto` so My Account/Profile is visible without scrolling on smaller mobile screens */}
+                <div className="px-8 py-10 bg-muted/30 border-t border-border flex flex-col gap-5">
+                  {isAuthenticated ? (
+                    <>
+                      <Link
+                        to="/profile"
+                        className="flex items-center text-sm font-bold text-primary hover:text-primary/80 transition-colors uppercase tracking-wider"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        <User className="h-5 w-5 mr-3" />
+                        My Account
+                      </Link>
+                      {/* Bug #90: logout closes the mobile sheet via onOpenChange(false) */}
+                      <button
+                        type="button"
+                        className="flex items-center text-sm font-bold text-destructive hover:text-destructive/80 transition-colors uppercase tracking-wider text-left"
+                        onClick={() => {
+                          logout();
+                          setIsMobileMenuOpen(false);
+                          navigate('/');
+                        }}
+                      >
+                        <LogOut className="h-5 w-5 mr-3" />
+                        Sign Out
+                      </button>
+                    </>
+                  ) : (
+                    <Link
+                      to="/auth"
+                      className="flex items-center text-sm font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-wider"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      <User className="h-5 w-5 mr-3" />
+                      Login / Register
+                    </Link>
+                  )}
+                  {/* Bug #177: bumped contrast from text-muted-foreground to text-foreground for AA compliance */}
+                  <Link
+                    to="/contact"
+                    className="flex items-center text-sm font-bold text-foreground hover:text-primary transition-colors uppercase tracking-wider"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <svg className="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                    Customer Support
+                  </Link>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
 
           {/* Logo */}
-          <Link to="/" className="flex items-center justify-center mx-auto">
-            <img src="/Tag logo-01.png" alt="Urban Drape" className="h-24 w-auto" />
+          <Link to="/" className="flex items-center justify-center">
+            <img src="/Tag logo-01.png" alt="Urban Drape — home" className="h-24 w-auto" />
           </Link>
 
           {/* Right Icons */}
           <div className="flex items-center gap-2">
             {/* Search */}
-            <div className="hidden md:flex items-center relative" ref={searchRef}>
+            <div className="hidden md:flex items-center relative">
               {isSearchOpen ? (
-                <div className="relative">
-                  <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in">
+                <form onSubmit={handleSearch} className="flex items-center gap-2 animate-fade-in relative z-50">
+                  <div className="relative">
                     <Input
-                      placeholder="Search products..."
-                      className="w-64 h-9"
+                      placeholder="Search..."
+                      className="w-48 lg:w-64 h-9"
                       autoFocus
                       value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setShowSuggestions(true);
-                      }}
-                      onKeyDown={handleKeyDown}
-                      onFocus={() => setShowSuggestions(true)}
+                      onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                    <Button type="submit" variant="ghost" size="icon" aria-label="Search">
-                      <Search className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Close search"
-                      onClick={() => {
-                        setIsSearchOpen(false);
-                        setSearchQuery("");
-                        setShowSuggestions(false);
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </form>
-
-                  {/* Suggestions Dropdown */}
-                  {showSuggestions && searchQuery.length >= 2 && (
-                    <div className="absolute top-full left-0 mt-2 w-80 bg-background border rounded-lg shadow-lg z-50 overflow-hidden animate-fade-in">
-                      {isLoadingProducts ? (
-                        <div className="flex items-center justify-center py-4">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : suggestions.length > 0 ? (
-                        <>
-                          <div className="p-2 border-b bg-muted/50">
-                            <span className="text-xs font-medium text-muted-foreground">
-                              Suggestions
-                            </span>
-                          </div>
-                          {suggestions.map((suggestion) => (
-                            <button
-                              key={suggestion.id}
-                              className="w-full flex items-center gap-3 p-3 hover:bg-accent transition-colors text-left"
-                              onClick={() => handleSuggestionClick(suggestion)}
+                    {searchQuery.trim() !== "" && (
+                      <div className="absolute top-full mt-2 w-[300px] right-0 bg-background border border-border rounded-md shadow-lg flex flex-col overflow-hidden animate-in fade-in-0 slide-in-from-top-2">
+                        {filteredSearchResults.length > 0 ? (
+                          filteredSearchResults.map(product => (
+                            <Link 
+                              key={product._id || product.id} 
+                              to={`/product/${product._id || product.id}`}
+                              className="flex items-center gap-3 p-3 hover:bg-muted transition-colors border-b border-border last:border-0"
+                              onClick={() => {
+                                setIsSearchOpen(false);
+                                setSearchQuery("");
+                              }}
                             >
-                              <img
-                                src={suggestion.image}
-                                alt={suggestion.name}
-                                className="w-12 h-12 object-cover rounded"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">
-                                  {suggestion.name}
-                                </p>
-                                <p className="text-sm text-primary font-semibold">
-                                  {formatPrice(suggestion.price)}
-                                </p>
+                              <img src={product.images?.[0] || product.image || ''} alt={product.name} className="w-10 h-10 object-cover rounded" />
+                              <div className="flex-1 overflow-hidden">
+                                <p className="text-sm font-medium truncate">{product.name}</p>
+                                <p className="text-xs text-muted-foreground">{formatPrice(product.price)}</p>
                               </div>
-                            </button>
-                          ))}
-                          <button
-                            className="w-full p-3 text-center text-sm text-primary font-medium hover:bg-accent transition-colors border-t"
-                            onClick={() => handleSearch()}
-                          >
-                            View all results for "{searchQuery}"
-                          </button>
-                        </>
-                      ) : (
-                        <div className="p-4 text-center text-sm text-muted-foreground">
-                          No products found for "{searchQuery}"
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                            </Link>
+                          ))
+                        ) : (
+                          <div className="p-4 text-sm text-center text-muted-foreground">No products found</div>
+                        )}
+                        {/* Bug #99: themed shadcn Button instead of unstyled native button */}
+                        <Button type="submit" variant="ghost" className="rounded-none w-full text-xs font-semibold">
+                          View All Results
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => setIsSearchOpen(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </form>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Search"
-                  onClick={() => setIsSearchOpen(true)}
-                >
+                <Button variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)}>
                   <Search className="h-5 w-5" />
                 </Button>
               )}
             </div>
 
             {/* Mobile Search */}
-            {/* Bug #47: Mobile search now has auto-suggestions dropdown */}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search">
+                <Button variant="ghost" size="icon" className="md:hidden">
                   <Search className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
               <SheetContent side="top" className="h-auto">
-                <div className="relative mt-4" ref={searchRef}>
-                  <form onSubmit={handleSearch} className="flex items-center gap-2">
+                <form onSubmit={handleSearch} className="flex flex-col gap-2 mt-4 relative">
+                  <div className="flex items-center gap-2">
                     <Input
                       placeholder="Search products..."
                       className="flex-1"
                       value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setShowSuggestions(true);
-                      }}
-                      onFocus={() => setShowSuggestions(true)}
-                      autoFocus
+                      onChange={(e) => setSearchQuery(e.target.value)}
                     />
-                    <Button type="submit" size="icon" aria-label="Search">
+                    <Button type="submit" size="icon">
                       <Search className="h-4 w-4" />
                     </Button>
-                  </form>
-                  {/* Mobile Suggestions Dropdown */}
-                  {showSuggestions && searchQuery.length >= 2 && (
-                    <div className="absolute top-full left-0 mt-2 w-full bg-background border rounded-lg shadow-lg z-50 overflow-hidden max-h-80 overflow-y-auto">
-                      {isLoadingProducts ? (
-                        <div className="flex items-center justify-center py-4">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : suggestions.length > 0 ? (
-                        <>
-                          <div className="p-2 border-b bg-muted/50 sticky top-0">
-                            <span className="text-xs font-medium text-muted-foreground">
-                              Suggestions
-                            </span>
-                          </div>
-                          {suggestions.map((suggestion) => (
-                            <button
-                              key={suggestion.id}
-                              className="w-full flex items-center gap-3 p-3 hover:bg-accent transition-colors text-left border-b last:border-b-0"
-                              onClick={() => handleSuggestionClick(suggestion)}
-                            >
-                              <img
-                                src={suggestion.image}
-                                alt={suggestion.name}
-                                className="w-12 h-12 object-cover rounded"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">
-                                  {suggestion.name}
-                                </p>
-                                <p className="text-sm text-primary font-semibold">
-                                  {formatPrice(suggestion.price)}
-                                </p>
-                              </div>
-                            </button>
-                          ))}
-                          <button
-                            className="w-full p-3 text-center text-sm text-primary font-medium hover:bg-accent transition-colors border-t sticky bottom-0 bg-background"
-                            onClick={() => handleSearch()}
+                  </div>
+                  {searchQuery.trim() !== "" && (
+                    <div className="w-full bg-background border border-border rounded-md shadow-sm flex flex-col overflow-hidden max-h-[60vh] overflow-y-auto mt-2">
+                      {filteredSearchResults.length > 0 ? (
+                        filteredSearchResults.map(product => (
+                          <Link 
+                            key={product._id || product.id} 
+                            to={`/product/${product._id || product.id}`}
+                            className="flex items-center gap-3 p-3 hover:bg-muted transition-colors border-b border-border last:border-0"
                           >
-                            View all results for "{searchQuery}"
-                          </button>
-                        </>
+                            <img src={product.images?.[0] || product.image || ''} alt={product.name} className="w-10 h-10 object-cover rounded" />
+                            <div className="flex-1 overflow-hidden">
+                              <p className="text-sm font-medium truncate">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">{formatPrice(product.price)}</p>
+                            </div>
+                          </Link>
+                        ))
                       ) : (
-                        <div className="p-4 text-center text-sm text-muted-foreground">
-                          No products found for "{searchQuery}"
-                        </div>
+                        <div className="p-4 text-sm text-center text-muted-foreground">No products found</div>
                       )}
+                      {/* Bug #99: themed shadcn Button instead of unstyled native button */}
+                      <Button type="submit" variant="ghost" className="rounded-none w-full text-sm font-semibold">
+                        View All Results
+                      </Button>
                     </div>
                   )}
-                </div>
+                </form>
               </SheetContent>
             </Sheet>
 
+
             {/* Wishlist */}
-            <Link to="/wishlist" aria-label="Wishlist">
-              <Button variant="ghost" size="icon" className="relative min-w-[44px] min-h-[44px]" aria-label="View wishlist">
+            <Link to="/wishlist" title="Wishlist" aria-label="Wishlist">
+              {/* Bug #83: title for native tooltip on hover */}
+              <Button variant="ghost" size="icon" className="relative" title="Wishlist" aria-label="Wishlist">
                 <Heart className="h-5 w-5" />
                 {wishlistItems > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 min-w-[20px] rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
-                    {wishlistItems > 99 ? "99+" : wishlistItems}
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
+                    {wishlistItems}
                   </span>
                 )}
               </Button>
             </Link>
 
             {/* Cart */}
+            {/* Bug #83: title for native tooltip on hover */}
             <Button
               variant="ghost"
               size="icon"
-              className="relative min-w-[44px] min-h-[44px]"
-              aria-label="Shopping cart"
+              className="relative"
+              title="Cart"
+              aria-label="Cart"
               onClick={() => setIsCartOpen(true)}
             >
               <ShoppingBag className="h-5 w-5" />
               {cartItems > 0 && (
-                <span className="absolute -top-1 -right-1 h-5 w-5 min-w-[20px] rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
-                  {cartItems > 99 ? "99+" : cartItems}
+                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary text-[11px] font-medium text-primary-foreground flex items-center justify-center">
+                  {cartItems}
                 </span>
               )}
             </Button>
@@ -429,36 +341,35 @@ export const Header = () => {
             {/* User Account */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="min-w-[44px] min-h-[44px]" aria-label="Account">
+                {/* Bug #83: title for native tooltip on hover */}
+                <Button variant="ghost" size="icon" title="Account" aria-label="Account">
                   <User className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48 bg-background border shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200">
-                {user ? (
+              {/* Bug #79: bump z-index above search results dropdown (z-50) */}
+              <DropdownMenuContent align="end" className="z-[60] w-48 bg-background border shadow-lg animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200">
+                {isAuthenticated ? (
                   <>
-                    <DropdownMenuItem disabled className="opacity-100 font-medium pb-2 border-b mb-1">
-                      Hi, {user.firstName}
-                    </DropdownMenuItem>
                     <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent">
-                      <Link to="/account" className="w-full cursor-pointer">My Account</Link>
+                      <Link to="/profile" className="w-full cursor-pointer font-medium text-primary">My Profile</Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent cursor-pointer" onClick={logout}>
-                      Logout
+                    <DropdownMenuItem 
+                      className="transition-colors duration-150 hover:bg-destructive/10 text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
+                      onClick={() => {
+                        logout();
+                        navigate('/');
+                      }}
+                    >
+                      Sign Out
                     </DropdownMenuItem>
-                    {/* Bug #113: Admin Login only visible to admin users */}
-                    {user.isAdmin && (
-                      <>
-                        <DropdownMenuSeparator className="bg-border" />
-                        <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-primary/10">
-                          <Link to="/admin/login" className="w-full cursor-pointer text-primary font-medium">Admin Panel</Link>
-                        </DropdownMenuItem>
-                      </>
-                    )}
                   </>
                 ) : (
                   <>
                     <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent">
-                      <Link to="/auth" className="w-full cursor-pointer">Login or Register</Link>
+                      <Link to="/auth" className="w-full cursor-pointer">Login</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild className="transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus:bg-accent">
+                      <Link to="/auth" className="w-full cursor-pointer">Register</Link>
                     </DropdownMenuItem>
                   </>
                 )}

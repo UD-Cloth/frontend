@@ -23,16 +23,19 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
           className="relative aspect-[3/4] overflow-hidden rounded-xl bg-secondary cursor-zoom-in group"
           onClick={() => setIsZoomOpen(true)}
         >
+          {/* Bug #55: keyed on selectedImage so React remounts the <img>; combined with `animate-in fade-in` this creates a smooth fade transition between gallery images. Bug #76: touch-manipulation prevents iOS double-tap zoom in favor of the lightbox click handler. */}
           <img
+            key={selectedImage}
             src={images[selectedImage]}
             alt={name}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="w-full h-full object-cover transition-all duration-500 group-hover:scale-105 animate-in fade-in touch-manipulation"
           />
           {images.length > 1 && (
             <>
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label="Previous image"
                 className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -44,6 +47,7 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label="Next image"
                 className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/90 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -68,6 +72,7 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Close zoom"
             className="absolute top-2 right-2 z-50 h-10 w-10 rounded-full bg-background/90 hover:bg-background"
             onClick={() => setIsZoomOpen(false)}
           >
@@ -84,6 +89,7 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label="Previous image"
                   className="absolute left-2 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-background/90"
                   onClick={() => setSelectedImage((prev) => (prev - 1 + images.length) % images.length)}
                 >
@@ -92,6 +98,7 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label="Next image"
                   className="absolute right-2 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-background/90"
                   onClick={() => setSelectedImage((prev) => (prev + 1) % images.length)}
                 >
@@ -108,6 +115,9 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
         {images.map((image, index) => (
           <button
             key={index}
+            type="button"
+            aria-label={`Show image ${index + 1} of ${images.length}`}
+            aria-current={selectedImage === index ? 'true' : undefined}
             onClick={() => setSelectedImage(index)}
             className={cn(
               "flex-shrink-0 w-16 h-20 md:w-20 md:h-24 rounded-lg overflow-hidden border-2 transition-all duration-200",
@@ -116,7 +126,7 @@ export const ProductImageGallery = ({ images, name, isNew }: ProductImageGallery
                 : "border-transparent opacity-60 hover:opacity-100"
             )}
           >
-            <img src={image} alt="" className="w-full h-full object-cover" />
+            <img src={image} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
           </button>
         ))}
       </div>

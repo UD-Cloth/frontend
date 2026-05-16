@@ -1,22 +1,25 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { useCMSData } from "@/hooks/useCMS";
+import { useCmsStore } from "@/stores/cmsStore";
 
 export const PromoBanner = () => {
-  const { data: cmsData } = useCMSData();
-  const promo = cmsData?.promoBanner;
+  const promo = useCmsStore(state => state.promoBanner);
 
-  if (!promo || !promo.isActive) return null;
+  if (!promo.isActive) return null;
 
   const titleText = promo.text.split('-')[0] || promo.text;
   const subtitleText = promo.text.split('-')[1] || '';
 
   return (
     <section
-      className="py-8 md:py-12"
+      className="py-10 md:py-16 relative overflow-hidden"
       style={{ backgroundColor: promo.bgColor, color: promo.textColor }}
     >
-      <div className="container px-4">
+      {/* Premium Texture & Gradient Overlays */}
+      <div className="absolute inset-0 opacity-[0.05] pointer-events-none" style={{ backgroundImage: "url('https://www.transparenttextures.com/patterns/stardust.png')" }} />
+      <div className="absolute inset-0 bg-gradient-to-tr from-black/10 to-transparent mix-blend-overlay pointer-events-none" />
+      
+      <div className="container px-4 relative z-10">
         <div className="flex flex-col items-center justify-between gap-4 md:gap-6 md:flex-row">
           <div className="text-center md:text-left">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-1 md:mb-2">

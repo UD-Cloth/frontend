@@ -30,7 +30,26 @@ export function useDeleteUser() {
       const { data } = await api.delete(`/admin/users/${userId}`);
       return data;
     },
-    onSuccess: () => {
+    // Bug #4: optimistically remove the user from the cache so it doesn't
+    // briefly reappear between the success callback and the refetch. Snapshot
+    // for rollback if the request fails.
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['adminUsers'] });
+      const previous = queryClient.getQueryData<User[]>(['adminUsers']);
+      if (previous) {
+        queryClient.setQueryData<User[]>(
+          ['adminUsers'],
+          previous.filter((u) => u._id !== userId)
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _userId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['adminUsers'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['adminUsers'] });
     },
   });

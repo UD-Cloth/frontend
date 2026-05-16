@@ -14,12 +14,18 @@ export interface NotificationLog {
     message: string;
     status: 'Sent' | 'Failed';
     sentAt: string;
+    // Bug #45: track read state for "Mark all as read" + bell badge
+    read: boolean;
 }
 
 interface NotificationStore {
     notifications: NotificationLog[];
     sendNotification: (order: Order, newStatus: OrderStatus) => Promise<boolean>;
     clearHistory: () => void;
+    // Bug #45
+    markAllAsRead: () => void;
+    markAsRead: (id: string) => void;
+    unreadCount: () => number;
 }
 
 const generateMessage = (order: Order, status: OrderStatus): string => {
@@ -44,7 +50,7 @@ const generateMessage = (order: Order, status: OrderStatus): string => {
 
 export const useNotificationStore = create<NotificationStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             notifications: [],
 
             sendNotification: async (order, newStatus) => {
@@ -69,6 +75,7 @@ export const useNotificationStore = create<NotificationStore>()(
                     message: message,
                     status: smsSuccess ? 'Sent' : 'Failed', // Status reflects simulated API response
                     sentAt: new Date().toISOString(),
+                    read: false,
                 };
 
                 set((state) => ({
@@ -79,10 +86,34 @@ export const useNotificationStore = create<NotificationStore>()(
             },
 
             clearHistory: () => set({ notifications: [] }),
+
+            // Bug #45: mark all notifications as read
+            markAllAsRead: () => set((state) => ({
+                notifications: state.notifications.map((n) => ({ ...n, read: true })),
+            })),
+
+            markAsRead: (id) => set((state) => ({
+                notifications: state.notifications.map((n) =>
+                    n.id === id ? { ...n, read: true } : n
+                ),
+            })),
+
+            unreadCount: () => get().notifications.filter((n) => !n.read).length,
         }),
         {
             name: 'urban-drape-notifications',
-            version: 1,
+            version: 2,
+            // Migrate persisted notifications without `read` field to read: true
+            // (treat existing history as already-seen on first load post-upgrade).
+            migrate: (persistedState: any, version) => {
+                if (!persistedState) return persistedState;
+                if (version < 2 && Array.isArray(persistedState.notifications)) {
+                    persistedState.notifications = persistedState.notifications.map(
+                        (n: any) => ({ ...n, read: n.read ?? true })
+                    );
+                }
+                return persistedState;
+            },
         }
     )
 );
